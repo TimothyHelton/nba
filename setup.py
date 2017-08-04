@@ -8,8 +8,8 @@ import re
 from setuptools import setup, find_packages
 
 
-with open('nba/__init__.py', 'r') as fd:
-    version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*) [\'"]',
+with open('nba_stats/__init__.py', 'r') as fd:
+    version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
                         fd.read(), re.MULTILINE).group(1)
 
 here = osp.abspath(osp.dirname(__file__))
@@ -17,7 +17,7 @@ with open(osp.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='nba',
+    name='nba_stats',
     version=version,
     description='Modules related to EnterDescriptionHere',
     author='Timothy Helton',
@@ -38,7 +38,7 @@ setup(
     packages=find_packages(exclude=['docs', 'tests*']),
     install_requires=[
         ],
-    package_dir={'nba': 'nba'},
+    package_dir={'nba_stats': 'nba_stats'},
     include_package_data=True,
     )
 
