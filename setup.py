@@ -37,7 +37,10 @@ setup(
     keywords='EnterKeywordsHere',
     packages=find_packages(exclude=['docs', 'tests*']),
     install_requires=[
-        ],
+        'numpy',
+        'pandas',
+        'requests',
+    ],
     package_dir={'nba_stats': 'nba_stats'},
     include_package_data=True,
     )
