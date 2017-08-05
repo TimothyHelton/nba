@@ -9,7 +9,9 @@ import io
 import logging
 import os.path as osp
 import re
+import urllib
 
+from bs4 import BeautifulSoup
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -42,6 +44,7 @@ class Statistics:
 
     :Attributes:
 
+    - **fame**: *Series* players in the Hall of Fame
     - **player**: *DataFrame* player dataset
     - **player_types**: *dict* data types for player dataset
     - **stats**: *DataFrame* season statistics dataset
@@ -49,9 +52,6 @@ class Statistics:
     """
     def __init__(self):
         self.fame = None
-        self.fame_types = {
-
-        }
         self.players = None
         self.players_types = {
             'idx': np.int,
@@ -121,6 +121,12 @@ class Statistics:
         }
 
         self.load_data()
+        try:
+            self.fame = pd.read_csv('https://timothyhelton.github.io/'
+                                    'assets/data/NBA_Hall_of_Fame.csv',
+                                    index_col=0)
+        except urllib.error.HTTPError:
+            self.scrape_hall_of_fame()
 
     def __repr__(self):
         return 'Statistics()'
@@ -177,4 +183,18 @@ class Statistics:
                       .drop(['blank_1', 'blank_2', 'idx'], axis=1))
         logging.debug('Season Stats Dataset Loaded')
 
+    def scrape_hall_of_fame(self):
+        """
+        Scrape all the NBA Hall of Fame inductees.
 
+        ..note:: NBA Hall of Fame Inductees scraped from www.nba.com website.
+        """
+        url = ('http://www.nba.com/history/naismith-memorial-basketball-hall'
+               '-of-fame-inductees/')
+        request = requests.get(url)
+        soup = BeautifulSoup(request.text, 'lxml')
+        section = soup.find('section', id='nbaArticleContent')
+        tags = section.find_all('p')
+        members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
+        inductees = [x[0] for x in members if 'Play' in x[1]]
+        self.fame = pd.Series(inductees, name='Hall of Fame')
