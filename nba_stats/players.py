@@ -45,8 +45,8 @@ class Statistics:
     :Attributes:
 
     - **fame**: *Series* players in the Hall of Fame
-    - **player**: *DataFrame* player dataset
-    - **player_types**: *dict* data types for player dataset
+    - **players**: *DataFrame* player dataset
+    - **players_types**: *dict* data types for player dataset
     - **stats**: *DataFrame* season statistics dataset
     - **stats_types**: *dict* data types for season statistics dataset
     """
@@ -198,3 +198,4 @@ class Statistics:
         members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
         inductees = [x[0] for x in members if 'Play' in x[1]]
         self.fame = pd.Series(inductees, name='Hall of Fame')
+        logging.info('NBA Hall of Fame Players Scraped')
