@@ -56,6 +56,11 @@ class Statistics:
     """
     def __init__(self):
         self.fame = None
+        self.fame_types = {
+            'name': str,
+            'category': 'category'
+        }
+
         self.players = None
         self.players_types = {
             'idx': np.int,
@@ -130,17 +135,18 @@ class Statistics:
         try:
             self.fame = pd.read_csv('https://timothyhelton.github.io/'
                                     'assets/data/NBA_Hall_of_Fame.csv',
+                                    dtype=self.fame_types,
                                     header=None,
                                     index_col=0,
-                                    names=['player']
+                                    names=self.fame_types.keys(),
+                                    skiprows=1,
                                     )
             logging.info('NBA Hall of Fame Players from '
                          'https://timothyhelton.github.io')
         except urllib.error.HTTPError:
             self.scrape_hall_of_fame()
         # Dan Issel's name is misspelled on the NBA Hall of Fame website
-        self.fame.player = self.fame.player.str.replace('Dan Issell',
-                                                        'Dan Issel')
+        self.fame.name = self.fame.name.str.replace('Dan Issell', 'Dan Issel')
 
         self.load_data()
 
@@ -174,7 +180,7 @@ class Statistics:
                                     date_parser=year_parser,
                                     dtype=self.players_types,
                                     header=None,
-                                    index_col=[5],
+                                    index_col=5,
                                     names=self.players_types.keys(),
                                     parse_dates=[5],
                                     skiprows=1,
@@ -193,7 +199,7 @@ class Statistics:
                                   date_parser=year_parser,
                                   dtype=self.stats_types,
                                   header=None,
-                                  index_col=[1],
+                                  index_col=1,
                                   names=self.stats_types.keys(),
                                   parse_dates=[1],
                                   skiprows=1,
@@ -202,10 +208,16 @@ class Statistics:
         self.stats.player = self.stats.player.str.replace('*', '')
         logging.debug('Season Stats Dataset Loaded')
 
+        filter_players = (self.fame[self.fame.category == 'Player']
+                          .name
+                          .values
+                          .flatten())
+
         self.players_fame = self.players[(self.players.player
-                                          .isin(self.fame.values.flatten()))]
+                                          .isin(filter_players))]
+
         self.stats_fame = self.stats[(self.stats.player
-                                      .isin(self.fame.values.flatten()))]
+                                      .isin(filter_players))]
 
     def scrape_hall_of_fame(self):
         """
@@ -220,10 +232,14 @@ class Statistics:
         section = soup.find('section', id='nbaArticleContent')
         tags = section.find_all('p')
         members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
-        inductees = [x[0] for x in members if 'Play' in x[1]]
-        self.fame = pd.Series(inductees, name='Hall of Fame')
+        remove_tags = [(x[0], re.sub(r'</?\w>', '', x[1]))
+                       for x in members[1:]]
+        remove_spaces = [(x[0], re.sub(r'\s', '', x[1])) for x in remove_tags]
+        remove_commas = [(x[0], re.sub(r',', '', x[1])) for x in remove_spaces]
+        self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
         logging.info('NBA Hall of Fame Players Scraped from www.nba.com')
 
+    # TODO correct for self.frame being a DataFrame(name, category)
     def missing_hall_of_fame(self):
         """
         Members of the Hall of Fame without entries in the datasets.
