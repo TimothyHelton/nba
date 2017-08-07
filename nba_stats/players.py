@@ -208,10 +208,7 @@ class Statistics:
         self.stats.player = self.stats.player.str.replace('*', '')
         logging.debug('Season Stats Dataset Loaded')
 
-        filter_players = (self.fame[self.fame.category == 'Player']
-                          .name
-                          .values
-                          .flatten())
+        filter_players = self.fame.query('category == "Player"').name
 
         self.players_fame = self.players[(self.players.player
                                           .isin(filter_players))]
@@ -239,21 +236,28 @@ class Statistics:
         self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
         logging.info('NBA Hall of Fame Players Scraped from www.nba.com')
 
-    # TODO correct for self.frame being a DataFrame(name, category)
     def missing_hall_of_fame(self):
         """
-        Members of the Hall of Fame without entries in the datasets.
+        Players in the Hall of Fame without entries in the datasets.
 
-        :return:
+        :return: names of players not found in the Players and Season Stats \
+            datasets
+        :rtype: DataFrame
         """
         no_players = (self.fame[~self.fame.isin((self.players_fame
-                                                 .values
-                                                 .flatten()))]
-                      .dropna())
+                                                 .player
+                                                 .tolist()))]
+                      .dropna()
+                      .query('category == "Player"')
+                      .name)
+        logging.debug('DIFF players Hall of Fame to Players Dataset complete')
         no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
-                    .dropna())
+                    .dropna()
+                    .query('category == "Player"')
+                    .name)
+        logging.debug('DIFF players Hall of Fame to Stats Dataset complete')
         return (pd.concat([no_players, no_stats], axis=1, join='outer',
-                          ignore_index=True, keys='player')
+                          ignore_index=True)
                 .rename(columns={n: name for n, name
                                  in enumerate(('player_dataset',
                                                'stats_dataset'))})
