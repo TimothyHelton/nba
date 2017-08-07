@@ -46,8 +46,12 @@ class Statistics:
 
     - **fame**: *Series* players in the Hall of Fame
     - **players**: *DataFrame* player dataset
+    - **players_fame**: *DataFrame* player dataset filtered to only include \
+        Hall of Fame members
     - **players_types**: *dict* data types for player dataset
     - **stats**: *DataFrame* season statistics dataset
+    - **stats_fame**: *DataFrame* stats dataset filtered to only include \
+        Hall of Fame members
     - **stats_types**: *dict* data types for season statistics dataset
     """
     def __init__(self):
@@ -63,6 +67,8 @@ class Statistics:
             'birth_city': str,                              # birth_city
             'birth_state': 'category',                      # birth_state
         }
+        self.players_fame = None
+
         self.stats = None
         self.stats_types = {
             'idx': np.int,
@@ -119,14 +125,24 @@ class Statistics:
             'fouls': np.int,                                # PF
             'points': np.int,                               # PTS
         }
+        self.stats_fame = None
 
-        self.load_data()
         try:
             self.fame = pd.read_csv('https://timothyhelton.github.io/'
                                     'assets/data/NBA_Hall_of_Fame.csv',
-                                    index_col=0)
+                                    header=None,
+                                    index_col=0,
+                                    names=['player']
+                                    )
+            logging.info('NBA Hall of Fame Players from '
+                         'https://timothyhelton.github.io')
         except urllib.error.HTTPError:
             self.scrape_hall_of_fame()
+        # Dan Issel's name is misspelled on the NBA Hall of Fame website
+        self.fame.player = self.fame.player.str.replace('Dan Issell',
+                                                        'Dan Issel')
+
+        self.load_data()
 
     def __repr__(self):
         return 'Statistics()'
@@ -163,7 +179,9 @@ class Statistics:
                                     parse_dates=[5],
                                     skiprows=1,
                                     )
-                        .drop('idx', axis=1))
+                        .drop('idx', axis=1)
+                        .dropna(how='all'))
+        self.players.player = self.players.player.str.replace('*', '')
         logging.debug('Players Dataset Loaded')
 
         with open(season_file, 'r') as f:
@@ -181,7 +199,13 @@ class Statistics:
                                   skiprows=1,
                                   )
                       .drop(['blank_1', 'blank_2', 'idx'], axis=1))
+        self.stats.player = self.stats.player.str.replace('*', '')
         logging.debug('Season Stats Dataset Loaded')
+
+        self.players_fame = self.players[(self.players.player
+                                          .isin(self.fame.values.flatten()))]
+        self.stats_fame = self.stats[(self.stats.player
+                                      .isin(self.fame.values.flatten()))]
 
     def scrape_hall_of_fame(self):
         """
@@ -198,4 +222,23 @@ class Statistics:
         members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
         inductees = [x[0] for x in members if 'Play' in x[1]]
         self.fame = pd.Series(inductees, name='Hall of Fame')
-        logging.info('NBA Hall of Fame Players Scraped')
+        logging.info('NBA Hall of Fame Players Scraped from www.nba.com')
+
+    def missing_hall_of_fame(self):
+        """
+        Members of the Hall of Fame without entries in the datasets.
+
+        :return:
+        """
+        no_players = (self.fame[~self.fame.isin((self.players_fame
+                                                 .values
+                                                 .flatten()))]
+                      .dropna())
+        no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
+                    .dropna())
+        return (pd.concat([no_players, no_stats], axis=1, join='outer',
+                          ignore_index=True, keys='player')
+                .rename(columns={n: name for n, name
+                                 in enumerate(('player_dataset',
+                                               'stats_dataset'))})
+                .reset_index(drop=True))
