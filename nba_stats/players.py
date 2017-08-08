@@ -18,6 +18,9 @@ import pandas as pd
 import requests
 import seaborn as sns
 
+from nba_stats.utils import save_fig, size
+
+
 log_format = ('%(asctime)s  %(levelname)8s  -> %(name)s <- '
               '(line: %(lineno)d) %(message)s\n')
 date_format = '%m/%d/%Y %I:%M:%S'
@@ -262,3 +265,49 @@ class Statistics:
                                  in enumerate(('player_dataset',
                                                'stats_dataset'))})
                 .reset_index(drop=True))
+
+    def hof_category_plot(self, save=False):
+        """
+        Horizontal Bar chart of Hall of Fame categories.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Categories', figsize=(12, 3),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        categories = (self.fame
+                      .groupby('category')
+                      .count()
+                      .sort_values(by='name'))
+
+        categories.plot(kind='barh', alpha=0.5, color=['gray'],
+                        edgecolor='black', legend=None, width=0.7, ax=ax0)
+
+        emphasis = categories.index.get_loc('Player')
+        ax0.patches[emphasis].set_facecolor('C0')
+        ax0.patches[emphasis].set_alpha(0.7)
+        width = ax0.patches[emphasis].get_width()
+        height = ax0.patches[emphasis].get_height()
+        ax0.text(x=width - 2,
+                 y=ax0.patches[emphasis].get_y() + height / 2 - 0.15,
+                 s=f'{width:.0f}',
+                 fontsize=size['label'],
+                 ha='right')
+
+        ax0.set_title('Naismith Memorial Basketball Hall of Fame Categories',
+                      fontsize=size['title'])
+        ax0.set_ylabel('')
+
+        ax0.set_xticklabels('')
+        ax0.xaxis.set_ticks_position('none')
+        ax0.yaxis.set_ticks_position('none')
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['legend'])
+        ax0.spines['top'].set_visible(False)
+        ax0.spines['right'].set_visible(False)
+        ax0.spines['bottom'].set_visible(False)
+        ax0.spines['left'].set_visible(False)
+
+        save_fig('hof_category', save)

@@ -38,9 +38,11 @@ setup(
     packages=find_packages(exclude=['docs', 'tests*']),
     install_requires=[
         'beautifulsoup4',
+        'matplotlib',
         'numpy',
         'pandas',
         'requests',
+        'seaborn',
     ],
     package_dir={'nba_stats': 'nba_stats'},
     include_package_data=True,
