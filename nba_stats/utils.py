@@ -25,7 +25,7 @@ size = {
 }
 
 
-def save_fig(name=None, save=False, super_title=''):
+def save_fig(name=None, save=False, super_title=None):
     """
     Helper function to save or display figure.
 
@@ -34,7 +34,10 @@ def save_fig(name=None, save=False, super_title=''):
     :param super_title:
     """
     if save:
-        plt.savefig(f'{name}.png', bbox_inches='tight',
-                    bbox_extra_artists=[super_title])
+        try:
+            plt.savefig(f'{name}.png', bbox_inches='tight',
+                        bbox_extra_artists=[super_title])
+        except AttributeError:
+            plt.savefig(f'{name}.png')
     else:
         plt.show()
