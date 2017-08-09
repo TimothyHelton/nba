@@ -311,7 +311,7 @@ class Statistics:
                      s=f'{width:.0f}',
                      ha='right')
 
-        ax0.set_title('Hall of Fame Birth Locations', fontsize=size['title'])
+        ax0.set_title('Birth Locations', fontsize=size['title'])
         ax0.set_ylabel('')
 
         ax0.set_xticklabels('')
@@ -324,7 +324,11 @@ class Statistics:
         ax0.spines['bottom'].set_visible(False)
         ax0.spines['left'].set_visible(False)
 
-        save_fig('hof_birth_locations', save)
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.05, y=0.95)
+
+        save_fig('hof_birth_locations', save, super_title)
 
     def hof_category_plot(self, save=False):
         """
@@ -357,7 +361,7 @@ class Statistics:
                      fontsize=size['label'],
                      ha='right')
 
-        ax0.set_title('Hall of Fame Categories', fontsize=size['title'])
+        ax0.set_title('Categories', fontsize=size['title'])
         ax0.set_ylabel('')
 
         ax0.set_xticklabels('')
@@ -370,11 +374,59 @@ class Statistics:
         ax0.spines['bottom'].set_visible(False)
         ax0.spines['left'].set_visible(False)
 
-        save_fig('hof_category', save)
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.05, y=1.09)
+
+        save_fig('hof_category', save, super_title)
 
     def hof_college_plot(self, save=False):
         """
-        Horizontal Bar chart 
-        :param save:
+        Horizontal Bar chart of Hall of Fame College Attendance.
+
+        :param bool save: if True the figure will be saved
         """
-        pass
+        plt.figure('Hall of Fame Attended College', figsize=(8, 1),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        yes = self.players_fame.college.count()
+        no = self.players_fame.college.size - yes
+
+        attend = pd.Series([yes, no], index=['Yes', 'No']).sort_index()
+
+        attend.plot(kind='barh', alpha=0.5, color=['gray'],
+                    edgecolor='black', legend=None, width=0.7, ax=ax0)
+
+        emphasis = attend.index.get_loc('Yes')
+        ax0.patches[emphasis].set_facecolor('C0')
+        ax0.patches[emphasis].set_alpha(0.7)
+
+        for patch in ax0.patches:
+            width = patch.get_width()
+            ax0.text(x=width - 1,
+                     y=patch.get_y() + 0.16,
+                     s=f'{width:.0f}',
+                     fontsize=size['label'],
+                     ha='right')
+
+        ax0.set_title('Attended College',
+                      fontsize=size['title'])
+        ax0.set_ylabel('')
+
+        ax0.set_xticklabels('')
+        ax0.xaxis.set_ticks_position('none')
+        ax0.yaxis.set_ticks_position('none')
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['legend'])
+        ax0.spines['top'].set_visible(False)
+        ax0.spines['right'].set_visible(False)
+        ax0.spines['bottom'].set_visible(False)
+        ax0.spines['left'].set_visible(False)
+
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.15, y=1.6)
+
+        save_fig('hof_college', save, super_title)
