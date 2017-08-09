@@ -70,7 +70,7 @@ class Statistics:
             'player': str,                                  # Player
             'height': np.float,                             # height
             'weight': np.float,                             # weight
-            'collage': 'category',                          # collage
+            'college': 'category',                          # college
             'born': str,                                    # born
             'birth_city': str,                              # birth_city
             'birth_state': 'category',                      # birth_state
@@ -266,6 +266,66 @@ class Statistics:
                                                'stats_dataset'))})
                 .reset_index(drop=True))
 
+    def hof_birth_loc_plot(self, save=False):
+        """
+        Horizontal Bar chart of birth locations for Hall of Fame players.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Birth Locations', figsize=(14, 10),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        locations = (self.players_fame
+                     .groupby('birth_state')
+                     .player
+                     .count()
+                     .sort_values(ascending=True))
+        locations = locations.iloc[locations.nonzero()]
+
+        (locations
+         .plot(kind='barh', alpha=0.5, color=['gray'],
+               edgecolor='black', legend=None, width=0.7, ax=ax0))
+
+        medium = (locations[(locations > 4) & (locations < 10)]
+                  .index
+                  .get_values())
+        for patch in medium:
+            position = locations.index.get_loc(patch)
+            ax0.patches[position].set_facecolor('C0')
+            ax0.patches[position].set_alpha(0.5)
+
+        high = (locations[locations >= 10]
+                .index
+                .get_values())
+        for patch in high:
+            position = locations.index.get_loc(patch)
+            ax0.patches[position].set_facecolor('C0')
+            ax0.patches[position].set_alpha(0.9)
+
+        for patch in ax0.patches:
+            width = patch.get_width()
+            ax0.text(x=width - 0.1,
+                     y=patch.get_y() + 0.1,
+                     s=f'{width:.0f}',
+                     ha='right')
+
+        ax0.set_title('Hall of Fame Birth Locations', fontsize=size['title'])
+        ax0.set_ylabel('')
+
+        ax0.set_xticklabels('')
+        ax0.xaxis.set_ticks_position('none')
+        ax0.yaxis.set_ticks_position('none')
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['legend'])
+        ax0.spines['top'].set_visible(False)
+        ax0.spines['right'].set_visible(False)
+        ax0.spines['bottom'].set_visible(False)
+        ax0.spines['left'].set_visible(False)
+
+        save_fig('hof_birth_locations', save)
+
     def hof_category_plot(self, save=False):
         """
         Horizontal Bar chart of Hall of Fame categories.
@@ -288,16 +348,16 @@ class Statistics:
         emphasis = categories.index.get_loc('Player')
         ax0.patches[emphasis].set_facecolor('C0')
         ax0.patches[emphasis].set_alpha(0.7)
-        width = ax0.patches[emphasis].get_width()
-        height = ax0.patches[emphasis].get_height()
-        ax0.text(x=width - 2,
-                 y=ax0.patches[emphasis].get_y() + height / 2 - 0.15,
-                 s=f'{width:.0f}',
-                 fontsize=size['label'],
-                 ha='right')
 
-        ax0.set_title('Naismith Memorial Basketball Hall of Fame Categories',
-                      fontsize=size['title'])
+        for patch in ax0.patches:
+            width = patch.get_width()
+            ax0.text(x=width - 1,
+                     y=patch.get_y() + 0.17,
+                     s=f'{width:.0f}',
+                     fontsize=size['label'],
+                     ha='right')
+
+        ax0.set_title('Hall of Fame Categories', fontsize=size['title'])
         ax0.set_ylabel('')
 
         ax0.set_xticklabels('')
@@ -311,3 +371,10 @@ class Statistics:
         ax0.spines['left'].set_visible(False)
 
         save_fig('hof_category', save)
+
+    def hof_college_plot(self, save=False):
+        """
+        Horizontal Bar chart 
+        :param save:
+        """
+        pass
