@@ -319,16 +319,17 @@ class Statistics:
         ax0.yaxis.set_ticks_position('none')
         ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
                             fontsize=size['legend'])
-        ax0.spines['top'].set_visible(False)
-        ax0.spines['right'].set_visible(False)
-        ax0.spines['bottom'].set_visible(False)
-        ax0.spines['left'].set_visible(False)
+
+        for side in ('top', 'right', 'bottom', 'left'):
+            ax0.spines[side].set_visible(False)
 
         super_title = plt.suptitle('Hall of Fame Players',
                                    fontsize=size['super_title'],
                                    x=0.05, y=0.95)
 
         save_fig('hof_birth_locations', save, super_title)
+        logging.debug('Create Hall of Fame Birth Locations Plot')
+
 
     def hof_category_plot(self, save=False):
         """
@@ -369,16 +370,16 @@ class Statistics:
         ax0.yaxis.set_ticks_position('none')
         ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
                             fontsize=size['legend'])
-        ax0.spines['top'].set_visible(False)
-        ax0.spines['right'].set_visible(False)
-        ax0.spines['bottom'].set_visible(False)
-        ax0.spines['left'].set_visible(False)
+
+        for side in ('top', 'right', 'bottom', 'left'):
+            ax0.spines[side].set_visible(False)
 
         super_title = plt.suptitle('Hall of Fame Players',
                                    fontsize=size['super_title'],
                                    x=0.05, y=1.09)
 
         save_fig('hof_category', save, super_title)
+        logging.debug('Create Hall of Fame Category Plot')
 
     def hof_college_plot(self, save=False):
         """
@@ -420,13 +421,37 @@ class Statistics:
         ax0.yaxis.set_ticks_position('none')
         ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
                             fontsize=size['legend'])
-        ax0.spines['top'].set_visible(False)
-        ax0.spines['right'].set_visible(False)
-        ax0.spines['bottom'].set_visible(False)
-        ax0.spines['left'].set_visible(False)
+
+        for side in ('top', 'right', 'bottom', 'left'):
+            ax0.spines[side].set_visible(False)
 
         super_title = plt.suptitle('Hall of Fame Players',
                                    fontsize=size['super_title'],
                                    x=0.15, y=1.6)
 
         save_fig('hof_college', save, super_title)
+        logging.debug('Create Hall of Fame College Attendance Plot')
+
+    def hof_percent_plot(self, save=False):
+        """
+        Large percent image of players to make it to the Hall of Fame.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Percentage', figsize=(6, 2.1),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        hof_qty = self.players_fame.shape[0]
+        all_qty = self.players.shape[0]
+        hof_pct = hof_qty / all_qty * 100
+        ax0.text(x=0, y=0, s=f'{hof_pct:.1f}%', color='C0', fontsize=125,
+                 ha='left', va='bottom')
+        ax0.text(x=0, y=0, s='NBA Players in the Hall of Fame', color='C0',
+                 fontsize=20, ha='left')
+
+        ax0.axis('off')
+
+        save_fig('hof_percent', save)
+        logging.debug('Create Hall of Fame Percent Plot')
