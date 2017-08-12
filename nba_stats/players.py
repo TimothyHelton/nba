@@ -11,7 +11,10 @@ import os.path as osp
 import re
 import urllib
 
+from bokeh import io as bkio
+from bokeh import models as bkm
 from bs4 import BeautifulSoup
+import geocoder
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -19,6 +22,12 @@ import requests
 import seaborn as sns
 
 from nba_stats.utils import save_fig, size
+try:
+    from nba_stats import keys
+except ModuleNotFoundError:
+    print('A Google API Key is required to generate the geographic images.')
+    print('Upon instancing the Statistics class please assign your key to the '
+          'google_key attribute.')
 
 
 log_format = ('%(asctime)s  %(levelname)8s  -> %(name)s <- '
@@ -48,6 +57,9 @@ class Statistics:
     :Attributes:
 
     - **fame**: *Series* players in the Hall of Fame
+    - **google_key**: *str* Google API Key
+    - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
+        latitude and longitude
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -63,6 +75,13 @@ class Statistics:
             'name': str,
             'category': 'category'
         }
+
+        try:
+            self.google_key = keys.GOOGLE_API_KEY
+        except NameError:
+            self.google_key = None
+
+        self.hof_birth_locations = None
 
         self.players = None
         self.players_types = {
@@ -152,6 +171,16 @@ class Statistics:
         self.fame.name = self.fame.name.str.replace('Dan Issell', 'Dan Issel')
 
         self.load_data()
+
+        try:
+            self.hof_birth_locations = pd.read_csv(
+                'https://timothyhelton.github.io/assets/data'
+                '/hof_birth_locations.csv',
+                index_col=0,
+            )
+            logging.info('Loaded Hall of Fame Birth Locations')
+        except urllib.error.HTTPError:
+            self.get_hof_birth_locations()
 
     def __repr__(self):
         return 'Statistics()'
@@ -266,9 +295,43 @@ class Statistics:
                                                'stats_dataset'))})
                 .reset_index(drop=True))
 
+    def get_hof_birth_locations(self):
+        """
+        Get male Hall of Fame birth location latitude and longitude values.
+        """
+        locations_qty = (self.players_fame
+                         .groupby('birth_state')
+                         .player
+                         .count()
+                         .sort_values(ascending=False))
+        locations_qty = locations_qty.iloc[locations_qty.nonzero()]
+
+        locations = (self.players_fame
+                     .birth_state
+                     .unique()
+                     .dropna())
+
+        logging.info('Acquiring Hall of Fame birth geo coordinates')
+        coordinates = []
+        for place in locations:
+            g = geocoder.google(place)
+            lat, long = g.latlng
+            coordinates.append([place, lat, long])
+
+        self.hof_birth_locations = (pd.DataFrame(coordinates,
+                                                 columns=['locations',
+                                                          'latitude',
+                                                          'longitude'])
+                                    .set_index('locations'))
+        self.hof_birth_locations['qty'] = locations_qty
+        self.hof_birth_locations.sort_values(by='qty',
+                                             ascending=False,
+                                             inplace=True)
+        logging.debug('Hall of Fame birth locations loaded')
+
     def hof_birth_loc_plot(self, save=False):
         """
-        Horizontal Bar chart of birth locations for Hall of Fame players.
+        Horizontal Bar chart of birth locations for male Hall of Fame players.
 
         :param bool save: if True the figure will be saved
         """
@@ -277,13 +340,9 @@ class Statistics:
         rows, cols = (1, 1)
         ax0 = plt.subplot2grid((rows, cols), (0, 0))
 
-        locations = (self.players_fame
-                     .groupby('birth_state')
-                     .player
-                     .count()
+        locations = (self.hof_birth_locations
+                     .qty
                      .sort_values(ascending=True))
-        locations = locations.iloc[locations.nonzero()]
-
         (locations
          .plot(kind='barh', alpha=0.5, color=['gray'],
                edgecolor='black', legend=None, width=0.7, ax=ax0))
@@ -330,6 +389,53 @@ class Statistics:
         save_fig('hof_birth_locations', save, super_title)
         logging.debug('Create Hall of Fame Birth Locations Plot')
 
+    def hof_birth_map_plot(self):
+        """
+        Plot male player Hall of Fame birth locations.
+
+        .. warning:: This method requires a Google API Key
+        """
+        map_options = {
+            'lat': 39.50,
+            'lng': -98.35,
+            'map_type': 'roadmap',
+            'zoom': 4,
+        }
+        plot = bkm.GMapPlot(
+            api_key=keys.GOOGLE_API_KEY,
+            x_range=bkm.Range1d(),
+            y_range=bkm.Range1d(),
+            map_options=bkm.GMapOptions(**map_options),
+            plot_width=800,
+            plot_height=600,
+        )
+        plot.title.text = 'Hall of Fame Birth Locations'
+
+        location = bkm.Circle(
+            x='longitude',
+            y='latitude',
+            fill_alpha=0.8,
+            fill_color='#cc0000',
+            line_color=None,
+            size='m_size',
+        )
+
+        self.hof_birth_locations['m_size'] = self.hof_birth_locations.qty + 5
+        locations = bkm.sources.ColumnDataSource(self.hof_birth_locations)
+        plot.add_glyph(locations, location)
+
+        hover = bkm.HoverTool()
+        hover.tooltips = [
+            ('Hall of Fame Players', '@qty'),
+        ]
+        plot.add_tools(
+            hover,
+            bkm.PanTool(),
+            bkm.WheelZoomTool(),
+        )
+
+        bkio.output_file('hof_birth_map.html')
+        bkio.show(plot)
 
     def hof_category_plot(self, save=False):
         """
