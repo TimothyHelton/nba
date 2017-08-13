@@ -169,6 +169,12 @@ class Statistics:
             self.scrape_hall_of_fame()
         # Dan Issel's name is misspelled on the NBA Hall of Fame website
         self.fame.name = self.fame.name.str.replace('Dan Issell', 'Dan Issel')
+        # Charles Cooper is listed as Chuck Cooper in the dataset
+        self.fame.name = self.fame.name.str.replace('Charles Cooper',
+                                                    'Chuck Cooper')
+        # Richard Guerin's name is misspelled on the NBA Hall of Fame website
+        self.fame.name = self.fame.name.str.replace('Richard Geurin',
+                                                    'Richie Guerin')
 
         self.load_data()
 
@@ -324,9 +330,11 @@ class Statistics:
                                                           'longitude'])
                                     .set_index('locations'))
         self.hof_birth_locations['qty'] = locations_qty
-        self.hof_birth_locations.sort_values(by='qty',
-                                             ascending=False,
-                                             inplace=True)
+        self.hof_birth_locations = (self.hof_birth_locations
+                                    .reset_index()
+                                    .sort_values(by=['qty', 'locations'],
+                                                 ascending=[False, True])
+                                    .set_index('locations'))
         logging.debug('Hall of Fame birth locations loaded')
 
     def hof_birth_loc_plot(self, save=False):
@@ -561,3 +569,58 @@ class Statistics:
 
         save_fig('hof_percent', save)
         logging.debug('Create Hall of Fame Percent Plot')
+
+    def hof_player_breakdown_plot(self, save=False):
+        """
+        Horizontal bar plot of Hall of Fame player category breakdown.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Player Subcategories', figsize=(12, 3),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        total = self.fame.query('category == "Player"').shape[0]
+        nba = self.players_fame.shape[0]
+        categories = (pd.DataFrame([total, nba, 42, 16],
+                                   index=pd.Index(data=['Total', 'NBA',
+                                                        'Non-NBA Men',
+                                                        'Women'],
+                                                  name='Hall of Fame'),
+                                   columns=['inductees'])
+                      .sort_values(by='inductees', ascending=True))
+
+        categories.plot(kind='barh', alpha=0.5, color=['gray'],
+                        edgecolor='black', legend=None, width=0.7, ax=ax0)
+
+        emphasis = categories.index.get_loc('NBA')
+        ax0.patches[emphasis].set_facecolor('C0')
+        ax0.patches[emphasis].set_alpha(0.7)
+
+        for patch in ax0.patches:
+            width = patch.get_width()
+            ax0.text(x=width - 1,
+                     y=patch.get_y() + 0.2,
+                     s=f'{width:.0f}',
+                     fontsize=size['label'],
+                     ha='right')
+
+        ax0.set_title('Player Subcategories', fontsize=size['title'])
+        ax0.set_ylabel('')
+
+        ax0.set_xticklabels('')
+        ax0.xaxis.set_ticks_position('none')
+        ax0.yaxis.set_ticks_position('none')
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['legend'])
+
+        for side in ('top', 'right', 'bottom', 'left'):
+            ax0.spines[side].set_visible(False)
+
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.05, y=1.09)
+
+        save_fig('hof_player_subcategory', save, super_title)
+        logging.debug('Create Hall of Fame Player Subcategory Plot')
