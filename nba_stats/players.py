@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 import requests
 import seaborn as sns
+import sklearn.decomposition as skdecomp
+import sklearn.preprocessing as skpre
 
 from nba_stats.utils import save_fig, size
 try:
@@ -57,9 +59,11 @@ class Statistics:
     :Attributes:
 
     - **fame**: *Series* players in the Hall of Fame
+    - **fame_x** *DataFrame* Hall of Fame statistics features
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
+    - **hof_pca**: *list* Hall of Fame principal component analysis classes
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -75,6 +79,7 @@ class Statistics:
             'name': str,
             'category': 'category'
         }
+        self.fame_x = None
 
         try:
             self.google_key = keys.GOOGLE_API_KEY
@@ -82,6 +87,7 @@ class Statistics:
             self.google_key = None
 
         self.hof_birth_locations = None
+        self.hof_pca = []
 
         self.players = None
         self.players_types = {
@@ -254,6 +260,12 @@ class Statistics:
         self.stats_fame = self.stats[(self.stats.player
                                       .isin(filter_players))]
 
+        self.fame_x = self.stats_fame.drop('player', axis=1)
+        for col in self.fame_x.select_dtypes(include=['category']).columns:
+            self.fame_x[col] = (self.fame_x[col]
+                                    .cat
+                                    .codes)
+
     def scrape_hall_of_fame(self):
         """
         Scrape all the NBA Hall of Fame inductees.
@@ -336,6 +348,19 @@ class Statistics:
                                                  ascending=[False, True])
                                     .set_index('locations'))
         logging.debug('Hall of Fame birth locations loaded')
+
+    def get_hof_pca(self):
+        """
+        Perform Principal Component Analysis (PCA) on HOF season stats.
+        """
+        feature_counts = self.fame_x.count().sort_values().unique()
+
+        for count in feature_counts:
+            feature_subset = (self.fame_x.loc[:, self.fame_x.count() >= count]
+                              .dropna())
+            scaled_features = (skpre.StandardScaler()
+                               .fit_transform(feature_subset))
+            self.hof_pca.append(skdecomp.PCA().fit_transform(scaled_features))
 
     def hof_birth_loc_plot(self, save=False):
         """
