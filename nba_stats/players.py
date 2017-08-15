@@ -644,10 +644,12 @@ class Statistics:
         for side in ('bottom', 'left'):
             ax0.spines[side].set_visible(False)
 
+        for ax in (ax1, ax2):
+            ax.get_xaxis().set_ticks([])
+
         for ax in (ax0, ax1, ax2):
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-            ax.get_xaxis().set_ticks([])
             ax.get_yaxis().set_ticks([])
 
         plt.tight_layout()
