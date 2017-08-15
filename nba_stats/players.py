@@ -5,6 +5,7 @@
 
 .. moduleauthor:: Timothy Helton <timothy.j.helton@gmail.com>
 """
+from collections import namedtuple
 import io
 import logging
 import os.path as osp
@@ -23,7 +24,7 @@ import seaborn as sns
 import sklearn.decomposition as skdecomp
 import sklearn.preprocessing as skpre
 
-from nba_stats.utils import save_fig, size
+from nba_stats.utils import ax_formatter, save_fig, size
 try:
     from nba_stats import keys
 except ModuleNotFoundError:
@@ -63,7 +64,9 @@ class Statistics:
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
-    - **hof_pca**: *list* Hall of Fame principal component analysis classes
+    - **hof_pca**: *dict* Hall of Fame principal component analysis classes
+        - keys: *int* number of components
+        - values: *tuple* (pca.fit, pca.transform(fame_x))
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -87,7 +90,7 @@ class Statistics:
             self.google_key = None
 
         self.hof_birth_locations = None
-        self.hof_pca = []
+        self.hof_pca = {}
 
         self.players = None
         self.players_types = {
@@ -353,6 +356,7 @@ class Statistics:
         """
         Perform Principal Component Analysis (PCA) on HOF season stats.
         """
+        PCA = namedtuple('PCA', ['fit', 'transform'])
         feature_counts = self.fame_x.count().sort_values().unique()
 
         for count in feature_counts:
@@ -360,7 +364,10 @@ class Statistics:
                               .dropna())
             scaled_features = (skpre.StandardScaler()
                                .fit_transform(feature_subset))
-            self.hof_pca.append(skdecomp.PCA().fit_transform(scaled_features))
+            pca = skdecomp.PCA()
+            fit = pca.fit(scaled_features)
+            transform = pca.transform(feature_subset)
+            self.hof_pca[pca.n_components_] = PCA(fit, transform)
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -570,6 +577,85 @@ class Statistics:
 
         save_fig('hof_college', save, super_title)
         logging.debug('Create Hall of Fame College Attendance Plot')
+
+    @staticmethod
+    def pca_plot(pca, save=False):
+        """
+        Bar plot of Principle Components variance percentage.
+
+        :param Series pca: principle component analysis class
+        :param bool save: if True the figure will be saved
+        """
+        first = '$1^{st}'
+        plt.figure('Hall of Fame PCA', figsize=(12, 8),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (2, 2)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0), colspan=2)
+        ax1 = plt.subplot2grid((rows, cols), (1, 0))
+        ax2 = plt.subplot2grid((rows, cols), (1, 1))
+
+        var_pct = pca.fit.explained_variance_ratio_
+        var_pct_cum = var_pct.cumsum()
+
+        variance = pd.DataFrame(np.c_[var_pct, var_pct_cum],
+                                columns=['var_pct', 'var_pct_cum'])
+        ddf_var_pct = variance.var_pct.diff().diff()
+        cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
+        (variance.iloc[:cut_off]
+         .rename(index={x: x + 1 for x in range(var_pct.size)})
+         .plot(kind='bar', alpha=0.5, color=['C0', 'gray'], edgecolor='black',
+               width=0.7, ax=ax0))
+
+        ax0.set_title('Percent of Variance Explained', fontsize=size['title'])
+        ax0.legend(['Individual Variance', 'Cumulative Variance'],
+                   frameon=False, fontsize=size['legend'])
+        legend_handles = ax0.get_legend().legendHandles
+        legend_handles[0].set_alpha(0.7)
+        legend_handles[0].set_edgecolor('black')
+        ax0.set_xlabel('Principal Components', fontsize=size['label'])
+        ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(), rotation=0)
+
+        for patch in range(cut_off):
+            emphasis = variance.index.get_loc(patch)
+            ax0.patches[emphasis].set_facecolor('C0')
+            ax0.patches[emphasis].set_alpha(0.7)
+
+        for patch in ax0.patches:
+            height = patch.get_height()
+            ax0.text(x=patch.get_x() + patch.get_width() / 2,
+                     y=height - 0.035,
+                     s=f'{height * 100:1.0f}%',
+                     ha='center')
+
+        ax1.scatter(x=pca.transform[:, 0], y=pca.transform[:, 1], alpha=0.5)
+
+        ax1.set_title('$2^{nd}$ vs $1^{st}$ Principal Component',
+                      fontsize=size['title'])
+        ax1.set_xlabel('$1^{st}$ Principal Component', fontsize=size['label'])
+        ax1.set_ylabel('$2^{nd}$ Principal Component', fontsize=size['label'])
+
+        ax2.scatter(x=pca.transform[:, 1], y=pca.transform[:, 2], alpha=0.5)
+
+        ax2.set_title('$3^{rd}$ vs $2^{nd}$ Principal Component',
+                      fontsize = size['title'])
+        ax2.set_xlabel('$2^{nd}$ Principal Component', fontsize=size['label'])
+        ax2.set_ylabel('$3^{rd}$ Principal Component', fontsize=size['label'])
+
+        for side in ('bottom', 'left'):
+            ax0.spines[side].set_visible(False)
+
+        for ax in (ax0, ax1, ax2):
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.get_xaxis().set_ticks([])
+            ax.get_yaxis().set_ticks([])
+
+        plt.tight_layout()
+        super_title = plt.suptitle(f'Principal Components Analysis',
+                                   fontsize=size['super_title'],
+                                   x=0.22, y=1.05)
+
+        save_fig('hof_pca', save, super_title)
 
     def hof_percent_plot(self, save=False):
         """
