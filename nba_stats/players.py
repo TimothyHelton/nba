@@ -64,9 +64,10 @@ class Statistics:
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
-    - **hof_pca**: *dict* Hall of Fame principal component analysis classes
-        - keys: *int* number of components
-        - values: *tuple* (pca.fit, pca.transform(fame_x))
+    - **pca**: *dict* Hall of Fame principal component analysis classes
+        - keys: *int* number of features
+        - values: *tuple* (features, fit, transform, n_components, var_pct, \
+            var_pct_cum, variance, cut_off)
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -90,7 +91,7 @@ class Statistics:
             self.google_key = None
 
         self.hof_birth_locations = None
-        self.hof_pca = {}
+        self.pca = {}
 
         self.players = None
         self.players_types = {
@@ -352,22 +353,36 @@ class Statistics:
                                     .set_index('locations'))
         logging.debug('Hall of Fame birth locations loaded')
 
-    def get_hof_pca(self):
+    def get_pca(self):
         """
-        Perform Principal Component Analysis (PCA) on HOF season stats.
+        Perform Principal Component Analysis (PCA).
         """
-        PCA = namedtuple('PCA', ['fit', 'transform'])
+        PCA = namedtuple('PCA', [
+            'features', 'fit', 'transform', 'n_components', 'var_pct',
+            'var_pct_cum', 'variance', 'cut_off'])
         feature_counts = self.fame_x.count().sort_values().unique()
 
         for count in feature_counts:
             feature_subset = (self.fame_x.loc[:, self.fame_x.count() >= count]
                               .dropna())
+            features = feature_subset.columns
             scaled_features = (skpre.StandardScaler()
                                .fit_transform(feature_subset))
             pca = skdecomp.PCA()
             fit = pca.fit(scaled_features)
+            n_components = pca.n_components_
             transform = pca.transform(feature_subset)
-            self.hof_pca[pca.n_components_] = PCA(fit, transform)
+
+            var_pct = fit.explained_variance_ratio_
+            var_pct_cum = var_pct.cumsum()
+            variance = pd.DataFrame(np.c_[var_pct, var_pct_cum],
+                                    columns=['var_pct', 'var_pct_cum'])
+            ddf_var_pct = variance.var_pct.diff().diff()
+            cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
+
+            self.pca[n_components] = PCA(
+                features, fit, transform, n_components, var_pct, var_pct_cum,
+                variance, cut_off)
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -586,7 +601,6 @@ class Statistics:
         :param Series pca: principle component analysis class
         :param bool save: if True the figure will be saved
         """
-        first = '$1^{st}'
         plt.figure('Hall of Fame PCA', figsize=(12, 8),
                    facecolor='white', edgecolor=None)
         rows, cols = (2, 2)
@@ -594,15 +608,8 @@ class Statistics:
         ax1 = plt.subplot2grid((rows, cols), (1, 0))
         ax2 = plt.subplot2grid((rows, cols), (1, 1))
 
-        var_pct = pca.fit.explained_variance_ratio_
-        var_pct_cum = var_pct.cumsum()
-
-        variance = pd.DataFrame(np.c_[var_pct, var_pct_cum],
-                                columns=['var_pct', 'var_pct_cum'])
-        ddf_var_pct = variance.var_pct.diff().diff()
-        cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
-        (variance.iloc[:cut_off]
-         .rename(index={x: x + 1 for x in range(var_pct.size)})
+        (pca.variance.iloc[:pca.cut_off]
+         .rename(index={x: x + 1 for x in range(pca.var_pct.size)})
          .plot(kind='bar', alpha=0.5, color=['C0', 'gray'], edgecolor='black',
                width=0.7, ax=ax0))
 
@@ -615,8 +622,8 @@ class Statistics:
         ax0.set_xlabel('Principal Components', fontsize=size['label'])
         ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(), rotation=0)
 
-        for patch in range(cut_off):
-            emphasis = variance.index.get_loc(patch)
+        for patch in range(pca.cut_off):
+            emphasis = pca.variance.index.get_loc(patch)
             ax0.patches[emphasis].set_facecolor('C0')
             ax0.patches[emphasis].set_alpha(0.7)
 
@@ -653,9 +660,10 @@ class Statistics:
             ax.get_yaxis().set_ticks([])
 
         plt.tight_layout()
-        super_title = plt.suptitle(f'Principal Components Analysis',
+        super_title = plt.suptitle('Principal Components Analysis: '
+                                   f'{pca.n_components:3.0f} Features',
                                    fontsize=size['super_title'],
-                                   x=0.22, y=1.05)
+                                   x=0.31, y=1.05)
 
         save_fig('hof_pca', save, super_title)
 
