@@ -24,7 +24,7 @@ import seaborn as sns
 import sklearn.decomposition as skdecomp
 import sklearn.preprocessing as skpre
 
-from nba_stats.utils import ax_formatter, save_fig, size
+from nba_stats.utils import save_fig, size
 try:
     from nba_stats import keys
 except ModuleNotFoundError:
@@ -38,6 +38,8 @@ log_format = ('%(asctime)s  %(levelname)8s  -> %(name)s <- '
 date_format = '%m/%d/%Y %I:%M:%S'
 logging.basicConfig(format=log_format, datefmt=date_format,
                     level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 current_dir = osp.dirname(osp.realpath(__file__))
 data_dir = osp.realpath(osp.join(current_dir, '..', 'data'))
@@ -60,14 +62,14 @@ class Statistics:
     :Attributes:
 
     - **fame**: *Series* players in the Hall of Fame
-    - **fame_x** *DataFrame* Hall of Fame statistics features
+    - **features** *DataFrame* model features
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
     - **pca**: *dict* Hall of Fame principal component analysis classes
         - keys: *int* number of features
         - values: *tuple* (features, fit, transform, n_components, var_pct, \
-            var_pct_cum, variance, cut_off)
+            var_pct_cum, variance, cut_off, subset)
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -83,7 +85,7 @@ class Statistics:
             'name': str,
             'category': 'category'
         }
-        self.fame_x = None
+        self.features = None
 
         try:
             self.google_key = keys.GOOGLE_API_KEY
@@ -173,8 +175,8 @@ class Statistics:
                                     names=self.fame_types.keys(),
                                     skiprows=1,
                                     )
-            logging.info('NBA Hall of Fame Players from '
-                         'https://timothyhelton.github.io')
+            logger.info('NBA Hall of Fame Players from '
+                        'https://timothyhelton.github.io')
         except urllib.error.HTTPError:
             self.scrape_hall_of_fame()
         # Dan Issel's name is misspelled on the NBA Hall of Fame website
@@ -194,7 +196,7 @@ class Statistics:
                 '/hof_birth_locations.csv',
                 index_col=0,
             )
-            logging.info('Loaded Hall of Fame Birth Locations')
+            logger.info('Loaded Hall of Fame Birth Locations')
         except urllib.error.HTTPError:
             self.get_hof_birth_locations()
 
@@ -236,12 +238,12 @@ class Statistics:
                         .drop('idx', axis=1)
                         .dropna(how='all'))
         self.players.player = self.players.player.str.replace('*', '')
-        logging.debug('Players Dataset Loaded')
+        logger.debug('Players Dataset Loaded')
 
         with open(season_file, 'r') as f:
             season_text = f.read()
             filtered_text = blank_filter(season_text)
-            logging.info('Season Stats Dataset cleaned')
+            logger.info('Season Stats Dataset cleaned')
 
         self.stats = (pd.read_csv(io.StringIO(filtered_text),
                                   date_parser=year_parser,
@@ -254,21 +256,28 @@ class Statistics:
                                   )
                       .drop(['blank_1', 'blank_2', 'idx'], axis=1))
         self.stats.player = self.stats.player.str.replace('*', '')
-        logging.debug('Season Stats Dataset Loaded')
 
+        # Hall of Fame
         filter_players = self.fame.query('category == "Player"').name
+        logger.debug('Season Stats Dataset Loaded')
 
         self.players_fame = self.players[(self.players.player
                                           .isin(filter_players))]
+        logger.debug('Player Hall of Fame Dataset Loaded')
 
-        self.stats_fame = self.stats[(self.stats.player
-                                      .isin(filter_players))]
+        stats_mask = self.stats.player.isin(filter_players)
+        self.stats_fame = self.stats[stats_mask]
+        logger.debug('Stats Hall of Fame Dataset Loaded')
 
-        self.fame_x = self.stats_fame.drop('player', axis=1)
-        for col in self.fame_x.select_dtypes(include=['category']).columns:
-            self.fame_x[col] = (self.fame_x[col]
-                                    .cat
-                                    .codes)
+        # Features and Response
+        self.features = self.stats.drop('player', axis=1)
+        for col in self.features.select_dtypes(include=['category']).columns:
+            self.features[col] = (self.features[col]
+                                  .cat
+                                  .codes)
+        self.features['response'] = 0
+        self.features.loc[stats_mask, 'response'] = 1
+        logger.debug('Features Dataset Loaded')
 
     def scrape_hall_of_fame(self):
         """
@@ -288,7 +297,7 @@ class Statistics:
         remove_spaces = [(x[0], re.sub(r'\s', '', x[1])) for x in remove_tags]
         remove_commas = [(x[0], re.sub(r',', '', x[1])) for x in remove_spaces]
         self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
-        logging.info('NBA Hall of Fame Players Scraped from www.nba.com')
+        logger.info('NBA Hall of Fame Players Scraped from www.nba.com')
 
     def missing_hall_of_fame(self):
         """
@@ -304,12 +313,12 @@ class Statistics:
                       .dropna()
                       .query('category == "Player"')
                       .name)
-        logging.debug('DIFF players Hall of Fame to Players Dataset complete')
+        logger.debug('DIFF players Hall of Fame to Players Dataset complete')
         no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
                     .dropna()
                     .query('category == "Player"')
                     .name)
-        logging.debug('DIFF players Hall of Fame to Stats Dataset complete')
+        logger.debug('DIFF players Hall of Fame to Stats Dataset complete')
         return (pd.concat([no_players, no_stats], axis=1, join='outer',
                           ignore_index=True)
                 .rename(columns={n: name for n, name
@@ -333,7 +342,7 @@ class Statistics:
                      .unique()
                      .dropna())
 
-        logging.info('Acquiring Hall of Fame birth geo coordinates')
+        logger.info('Acquiring Hall of Fame birth geo coordinates')
         coordinates = []
         for place in locations:
             g = geocoder.google(place)
@@ -351,7 +360,7 @@ class Statistics:
                                     .sort_values(by=['qty', 'locations'],
                                                  ascending=[False, True])
                                     .set_index('locations'))
-        logging.debug('Hall of Fame birth locations loaded')
+        logger.debug('Hall of Fame birth locations loaded')
 
     def get_pca(self):
         """
@@ -359,11 +368,12 @@ class Statistics:
         """
         PCA = namedtuple('PCA', [
             'features', 'fit', 'transform', 'n_components', 'var_pct',
-            'var_pct_cum', 'variance', 'cut_off'])
-        feature_counts = self.fame_x.count().sort_values().unique()
+            'var_pct_cum', 'variance', 'cut_off', 'subset'])
+        feature_counts = self.features.count().sort_values().unique()
 
         for count in feature_counts:
-            feature_subset = (self.fame_x.loc[:, self.fame_x.count() >= count]
+            feature_subset = (self.features
+                              .loc[:, self.features.count() >= count]
                               .dropna())
             features = feature_subset.columns
             scaled_features = (skpre.StandardScaler()
@@ -382,7 +392,7 @@ class Statistics:
 
             self.pca[n_components] = PCA(
                 features, fit, transform, n_components, var_pct, var_pct_cum,
-                variance, cut_off)
+                variance, cut_off, feature_subset)
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -442,7 +452,7 @@ class Statistics:
                                    x=0.05, y=0.95)
 
         save_fig('hof_birth_locations', save, super_title)
-        logging.debug('Create Hall of Fame Birth Locations Plot')
+        logger.debug('Create Hall of Fame Birth Locations Plot')
 
     def hof_birth_map_plot(self):
         """
@@ -540,7 +550,7 @@ class Statistics:
                                    x=0.05, y=1.09)
 
         save_fig('hof_category', save, super_title)
-        logging.debug('Create Hall of Fame Category Plot')
+        logger.debug('Create Hall of Fame Category Plot')
 
     def hof_college_plot(self, save=False):
         """
@@ -591,7 +601,7 @@ class Statistics:
                                    x=0.15, y=1.6)
 
         save_fig('hof_college', save, super_title)
-        logging.debug('Create Hall of Fame College Attendance Plot')
+        logger.debug('Create Hall of Fame College Attendance Plot')
 
     @staticmethod
     def pca_plot(pca, save=False):
@@ -634,17 +644,29 @@ class Statistics:
                      s=f'{height * 100:1.0f}%',
                      ha='center')
 
-        ax1.scatter(x=pca.transform[:, 0], y=pca.transform[:, 1], alpha=0.5)
+        fame = pca.subset['response'].values.astype('bool')
+        out = np.invert(fame)
+
+        ax1.scatter(x=pca.transform[out][:, 0], y=pca.transform[out][:, 1],
+                    alpha=0.5, color='gray', label='Regular Players',
+                    marker='o')
+        ax1.scatter(x=pca.transform[fame][:, 0], y=pca.transform[fame][:, 1],
+                    alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax1.set_title('$2^{nd}$ vs $1^{st}$ Principal Component',
                       fontsize=size['title'])
         ax1.set_xlabel('$1^{st}$ Principal Component', fontsize=size['label'])
         ax1.set_ylabel('$2^{nd}$ Principal Component', fontsize=size['label'])
 
-        ax2.scatter(x=pca.transform[:, 1], y=pca.transform[:, 2], alpha=0.5)
+        ax2.scatter(x=pca.transform[out][:, 1], y=pca.transform[out][:, 2],
+                    alpha=0.5, color='gray', label='Regular Players',
+                    marker='o')
+        ax2.scatter(x=pca.transform[fame][:, 1], y=pca.transform[fame][:, 2],
+                    alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax2.set_title('$3^{rd}$ vs $2^{nd}$ Principal Component',
                       fontsize = size['title'])
+        ax2.legend(frameon=False)
         ax2.set_xlabel('$2^{nd}$ Principal Component', fontsize=size['label'])
         ax2.set_ylabel('$3^{rd}$ Principal Component', fontsize=size['label'])
 
@@ -652,6 +674,8 @@ class Statistics:
             ax0.spines[side].set_visible(False)
 
         for ax in (ax1, ax2):
+            legend = ax.legend()
+            legend.set_alpha(0.5)
             ax.get_xaxis().set_ticks([])
 
         for ax in (ax0, ax1, ax2):
@@ -689,7 +713,7 @@ class Statistics:
         ax0.axis('off')
 
         save_fig('hof_percent', save)
-        logging.debug('Create Hall of Fame Percent Plot')
+        logger.debug('Create Hall of Fame Percent Plot')
 
     def hof_player_breakdown_plot(self, save=False):
         """
@@ -744,4 +768,4 @@ class Statistics:
                                    x=0.05, y=1.09)
 
         save_fig('hof_player_subcategory', save, super_title)
-        logging.debug('Create Hall of Fame Player Subcategory Plot')
+        logger.debug('Create Hall of Fame Player Subcategory Plot')
