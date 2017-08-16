@@ -38,6 +38,7 @@ setup(
     packages=find_packages(exclude=['docs', 'tests*']),
     install_requires=[
         'beautifulsoup4',
+        'bokeh',
         'matplotlib',
         'numpy',
         'pandas',

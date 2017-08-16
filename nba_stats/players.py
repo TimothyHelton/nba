@@ -62,7 +62,11 @@ class Statistics:
     :Attributes:
 
     - **fame**: *Series* players in the Hall of Fame
-    - **features** *DataFrame* model features
+    - **features**: *DataFrame* model features
+    - **feature_counts**: *list* quantities of samples with complete data for \
+        a given subset of features
+    - **feature_subsets**: *dict* subsets of the data created which have \
+        all features defined
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
@@ -86,6 +90,8 @@ class Statistics:
             'category': 'category'
         }
         self.features = None
+        self.feature_counts = None
+        self.feature_subset = {}
 
         try:
             self.google_key = keys.GOOGLE_API_KEY
@@ -189,6 +195,7 @@ class Statistics:
                                                     'Richie Guerin')
 
         self.load_data()
+        self.get_feature_subsets()
 
         try:
             self.hof_birth_locations = pd.read_csv(
@@ -369,19 +376,15 @@ class Statistics:
         PCA = namedtuple('PCA', [
             'features', 'fit', 'transform', 'n_components', 'var_pct',
             'var_pct_cum', 'variance', 'cut_off', 'subset'])
-        feature_counts = self.features.count().sort_values().unique()
 
-        for count in feature_counts:
-            feature_subset = (self.features
-                              .loc[:, self.features.count() >= count]
-                              .dropna())
-            features = feature_subset.columns
-            scaled_features = (skpre.StandardScaler()
-                               .fit_transform(feature_subset))
+        for count in self.feature_counts:
+            subset = self.feature_subset[count]
+            features = subset.names
+            scaled_features = subset.scaled_data
             pca = skdecomp.PCA()
             fit = pca.fit(scaled_features)
             n_components = pca.n_components_
-            transform = pca.transform(feature_subset)
+            transform = pca.transform(subset.data)
 
             var_pct = fit.explained_variance_ratio_
             var_pct_cum = var_pct.cumsum()
@@ -392,7 +395,25 @@ class Statistics:
 
             self.pca[n_components] = PCA(
                 features, fit, transform, n_components, var_pct, var_pct_cum,
-                variance, cut_off, feature_subset)
+                variance, cut_off, subset.data)
+
+    def get_feature_subsets(self):
+        """
+        Split data on number of complete season statistics samples.
+        """
+        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data'])
+
+        self.feature_counts = self.features.count().sort_values().unique()
+
+        for count in self.feature_counts:
+            data = (self.features
+                    .loc[:, self.features.count() >= count]
+                    .dropna())
+            names = data.columns
+            scaled_data = (skpre.StandardScaler()
+                           .fit_transform(data))
+            self.feature_subset[count] = Subset(data, names, scaled_data)
+        logger.debug('Subset Extraction Complete')
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -665,7 +686,7 @@ class Statistics:
                     alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax2.set_title('$3^{rd}$ vs $2^{nd}$ Principal Component',
-                      fontsize = size['title'])
+                      fontsize=size['title'])
         ax2.legend(frameon=False)
         ax2.set_xlabel('$2^{nd}$ Principal Component', fontsize=size['label'])
         ax2.set_ylabel('$3^{rd}$ Principal Component', fontsize=size['label'])
