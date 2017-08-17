@@ -217,101 +217,31 @@ class Statistics:
     def __repr__(self):
         return 'Statistics()'
 
-    def load_data(self):
+    def get_feature_subsets(self):
         """
-        Load the player and stats datasets.
+        Split data on number of complete season statistics samples.
         """
-        def blank_filter(text):
-            """
-            Remove blank line entries.
+        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data',
+                                       'x_train', 'x_test', 'y_train',
+                                       'y_test'])
 
-            :param str text: original text
-            :return: text with blank entries removed
-            :rtype: str
-            """
-            return re.sub(r'^\d+,+$', '', text, flags=re.MULTILINE)
+        self.feature_counts = self.features.count().sort_values().unique()
 
-        def year_parser(year):
-            """
-            Format year string to be ISO 8601 string.
-            :param year: year
-            :return: year in ISO 8601 format
-            :rtype: str
-            """
-            return [f'{x}-01-01' for x in year]
-
-        self.players = (pd.read_csv(players_file,
-                                    date_parser=year_parser,
-                                    dtype=self.players_types,
-                                    header=None,
-                                    index_col=5,
-                                    names=self.players_types.keys(),
-                                    parse_dates=[5],
-                                    skiprows=1,
-                                    )
-                        .drop('idx', axis=1)
-                        .dropna(how='all'))
-        self.players.player = self.players.player.str.replace('*', '')
-        logger.debug('Players Dataset Loaded')
-
-        with open(season_file, 'r') as f:
-            season_text = f.read()
-            filtered_text = blank_filter(season_text)
-            logger.info('Season Stats Dataset cleaned')
-
-        self.stats = (pd.read_csv(io.StringIO(filtered_text),
-                                  date_parser=year_parser,
-                                  dtype=self.stats_types,
-                                  header=None,
-                                  index_col=1,
-                                  names=self.stats_types.keys(),
-                                  parse_dates=[1],
-                                  skiprows=1,
-                                  )
-                      .drop(['blank_1', 'blank_2', 'idx'], axis=1))
-        self.stats.player = self.stats.player.str.replace('*', '')
-
-        # Hall of Fame
-        filter_players = self.fame.query('category == "Player"').name
-        logger.debug('Season Stats Dataset Loaded')
-
-        self.players_fame = self.players[(self.players.player
-                                          .isin(filter_players))]
-        logger.debug('Player Hall of Fame Dataset Loaded')
-
-        stats_mask = self.stats.player.isin(filter_players)
-        self.stats_fame = self.stats[stats_mask]
-        logger.debug('Stats Hall of Fame Dataset Loaded')
-
-        # Features and Response
-        self.features = self.stats.drop('player', axis=1)
-        for col in self.features.select_dtypes(include=['category']).columns:
-            self.features[col] = (self.features[col]
-                                  .cat
-                                  .codes)
-        self.features['response'] = 0
-        self.features.loc[stats_mask, 'response'] = 1
-        logger.debug('Features Dataset Loaded')
-
-    def scrape_hall_of_fame(self):
-        """
-        Scrape all the NBA Hall of Fame inductees.
-
-        ..note:: NBA Hall of Fame Inductees scraped from www.nba.com website.
-        """
-        url = ('http://www.nba.com/history/naismith-memorial-basketball-hall'
-               '-of-fame-inductees/')
-        request = requests.get(url)
-        soup = BeautifulSoup(request.text, 'lxml')
-        section = soup.find('section', id='nbaArticleContent')
-        tags = section.find_all('p')
-        members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
-        remove_tags = [(x[0], re.sub(r'</?\w>', '', x[1]))
-                       for x in members[1:]]
-        remove_spaces = [(x[0], re.sub(r'\s', '', x[1])) for x in remove_tags]
-        remove_commas = [(x[0], re.sub(r',', '', x[1])) for x in remove_spaces]
-        self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
-        logger.info('NBA Hall of Fame Players Scraped from www.nba.com')
+        for count in self.feature_counts:
+            data = (self.features
+                    .loc[:, self.features.count() >= count]
+                    .dropna())
+            names = data.columns
+            scaled_data = (skpre.StandardScaler()
+                           .fit_transform(data))
+            # TODO Move this to a new method
+            x_train, x_test, y_train, y_test = skmodsel.train_test_split(
+                data.drop('response', axis=1),
+                data.response,
+                test_size=0.25)
+            self.feature_subset[count] = Subset(
+                data, names, scaled_data, x_train, x_test, y_train, y_test)
+        logger.debug('Subset Extraction Complete')
 
     def get_hof_birth_locations(self):
         """
@@ -348,32 +278,6 @@ class Statistics:
                                                  ascending=[False, True])
                                     .set_index('locations'))
         logger.debug('Hall of Fame birth locations loaded')
-
-    def get_feature_subsets(self):
-        """
-        Split data on number of complete season statistics samples.
-        """
-        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data',
-                                       'x_train', 'x_test', 'y_train',
-                                       'y_test'])
-
-        self.feature_counts = self.features.count().sort_values().unique()
-
-        for count in self.feature_counts:
-            data = (self.features
-                    .loc[:, self.features.count() >= count]
-                    .dropna())
-            names = data.columns
-            scaled_data = (skpre.StandardScaler()
-                           .fit_transform(data))
-            # TODO Move this to a new method
-            x_train, x_test, y_train, y_test = skmodsel.train_test_split(
-                data.drop('response', axis=1),
-                data.response,
-                test_size=0.25)
-            self.feature_subset[count] = Subset(
-                data, names, scaled_data, x_train, x_test, y_train, y_test)
-        logger.debug('Subset Extraction Complete')
 
     def get_kernel_pca(self, kernel='linear', n_components=10):
         """
@@ -435,33 +339,6 @@ class Statistics:
                 features, fit, transform, n_components, var_pct, var_pct_cum,
                 variance, cut_off, subset.data)
         logger.debug('PCA Complete')
-
-    def missing_hall_of_fame(self):
-        """
-        Players in the Hall of Fame without entries in the datasets.
-
-        :return: names of players not found in the Players and Season Stats \
-            datasets
-        :rtype: DataFrame
-        """
-        no_players = (self.fame[~self.fame.isin((self.players_fame
-                                                 .player
-                                                 .tolist()))]
-                      .dropna()
-                      .query('category == "Player"')
-                      .name)
-        logger.debug('DIFF players Hall of Fame to Players Dataset complete')
-        no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
-                    .dropna()
-                    .query('category == "Player"')
-                    .name)
-        logger.debug('DIFF players Hall of Fame to Stats Dataset complete')
-        return (pd.concat([no_players, no_stats], axis=1, join='outer',
-                          ignore_index=True)
-                .rename(columns={n: name for n, name
-                                 in enumerate(('player_dataset',
-                                               'stats_dataset'))})
-                .reset_index(drop=True))
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -795,6 +672,109 @@ class Statistics:
         save_fig('hof_player_subcategory', save, super_title)
         logger.debug('Create Hall of Fame Player Subcategory Plot')
 
+    def load_data(self):
+        """
+        Load the player and stats datasets.
+        """
+        def blank_filter(text):
+            """
+            Remove blank line entries.
+
+            :param str text: original text
+            :return: text with blank entries removed
+            :rtype: str
+            """
+            return re.sub(r'^\d+,+$', '', text, flags=re.MULTILINE)
+
+        def year_parser(year):
+            """
+            Format year string to be ISO 8601 string.
+            :param year: year
+            :return: year in ISO 8601 format
+            :rtype: str
+            """
+            return [f'{x}-01-01' for x in year]
+
+        self.players = (pd.read_csv(players_file,
+                                    date_parser=year_parser,
+                                    dtype=self.players_types,
+                                    header=None,
+                                    index_col=5,
+                                    names=self.players_types.keys(),
+                                    parse_dates=[5],
+                                    skiprows=1,
+                                    )
+                        .drop('idx', axis=1)
+                        .dropna(how='all'))
+        self.players.player = self.players.player.str.replace('*', '')
+        logger.debug('Players Dataset Loaded')
+
+        with open(season_file, 'r') as f:
+            season_text = f.read()
+            filtered_text = blank_filter(season_text)
+            logger.info('Season Stats Dataset cleaned')
+
+        self.stats = (pd.read_csv(io.StringIO(filtered_text),
+                                  date_parser=year_parser,
+                                  dtype=self.stats_types,
+                                  header=None,
+                                  index_col=1,
+                                  names=self.stats_types.keys(),
+                                  parse_dates=[1],
+                                  skiprows=1,
+                                  )
+                      .drop(['blank_1', 'blank_2', 'idx'], axis=1))
+        self.stats.player = self.stats.player.str.replace('*', '')
+
+        # Hall of Fame
+        filter_players = self.fame.query('category == "Player"').name
+        logger.debug('Season Stats Dataset Loaded')
+
+        self.players_fame = self.players[(self.players.player
+                                          .isin(filter_players))]
+        logger.debug('Player Hall of Fame Dataset Loaded')
+
+        stats_mask = self.stats.player.isin(filter_players)
+        self.stats_fame = self.stats[stats_mask]
+        logger.debug('Stats Hall of Fame Dataset Loaded')
+
+        # Features and Response
+        self.features = self.stats.drop('player', axis=1)
+        for col in self.features.select_dtypes(include=['category']).columns:
+            self.features[col] = (self.features[col]
+                                  .cat
+                                  .codes)
+        self.features['response'] = 0
+        self.features.loc[stats_mask, 'response'] = 1
+        logger.debug('Features Dataset Loaded')
+
+    def missing_hall_of_fame(self):
+        """
+        Players in the Hall of Fame without entries in the datasets.
+
+        :return: names of players not found in the Players and Season Stats \
+            datasets
+        :rtype: DataFrame
+        """
+        no_players = (self.fame[~self.fame.isin((self.players_fame
+                                                 .player
+                                                 .tolist()))]
+                      .dropna()
+                      .query('category == "Player"')
+                      .name)
+        logger.debug('DIFF players Hall of Fame to Players Dataset complete')
+        no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
+                    .dropna()
+                    .query('category == "Player"')
+                    .name)
+        logger.debug('DIFF players Hall of Fame to Stats Dataset complete')
+        return (pd.concat([no_players, no_stats], axis=1, join='outer',
+                          ignore_index=True)
+                .rename(columns={n: name for n, name
+                                 in enumerate(('player_dataset',
+                                               'stats_dataset'))})
+                .reset_index(drop=True))
+
     @staticmethod
     def pca_plot(pca, save=False):
         """
@@ -882,3 +862,23 @@ class Statistics:
                                    x=0.31, y=1.05)
 
         save_fig('hof_pca', save, super_title)
+
+    def scrape_hall_of_fame(self):
+        """
+        Scrape all the NBA Hall of Fame inductees.
+
+        ..note:: NBA Hall of Fame Inductees scraped from www.nba.com website.
+        """
+        url = ('http://www.nba.com/history/naismith-memorial-basketball-hall'
+               '-of-fame-inductees/')
+        request = requests.get(url)
+        soup = BeautifulSoup(request.text, 'lxml')
+        section = soup.find('section', id='nbaArticleContent')
+        tags = section.find_all('p')
+        members = re.findall(r'<p>\s<b>(.+?)</b>(.+?)</p>', str(tags))
+        remove_tags = [(x[0], re.sub(r'</?\w>', '', x[1]))
+                       for x in members[1:]]
+        remove_spaces = [(x[0], re.sub(r'\s', '', x[1])) for x in remove_tags]
+        remove_commas = [(x[0], re.sub(r',', '', x[1])) for x in remove_spaces]
+        self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
+        logger.info('NBA Hall of Fame Players Scraped from www.nba.com')
