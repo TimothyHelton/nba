@@ -24,7 +24,6 @@ import requests
 import seaborn as sns
 import sklearn.decomposition as skdecomp
 import sklearn.linear_model as sklinmod
-import sklearn.model_selection as skmodsel
 import sklearn.preprocessing as skpre
 
 from nba_stats.utils import save_fig, size
@@ -69,7 +68,14 @@ class Statistics:
     - **feature_counts**: *list* quantities of samples with complete data for \
         a given subset of features
     - **feature_subsets**: *dict* subsets of the data created which have \
-        all features defined
+        all features defined in a namedtulple
+        - fields:
+            - data
+            - feature_names
+            - x_test
+            - x_train
+            - y_test
+            - y_train
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
@@ -90,11 +96,32 @@ class Statistics:
     - **stats_types**: *dict* data types for season statistics dataset
     """
     def __init__(self):
-        self.fame = None
         self.fame_types = {
             'name': str,
             'category': 'category'
         }
+        try:
+            self.fame = pd.read_csv('https://timothyhelton.github.io/'
+                                    'assets/data/NBA_Hall_of_Fame.csv',
+                                    dtype=self.fame_types,
+                                    header=None,
+                                    index_col=0,
+                                    names=self.fame_types.keys(),
+                                    skiprows=1,
+                                    )
+            logger.info('NBA Hall of Fame Players from '
+                        'https://timothyhelton.github.io')
+        except urllib.error.HTTPError:
+            self.scrape_hall_of_fame()
+        # Dan Issel's name is misspelled on the NBA Hall of Fame website
+        self.fame.name = self.fame.name.str.replace('Dan Issell', 'Dan Issel')
+        # Charles Cooper is listed as Chuck Cooper in the dataset
+        self.fame.name = self.fame.name.str.replace('Charles Cooper',
+                                                    'Chuck Cooper')
+        # Richard Guerin's name is misspelled on the NBA Hall of Fame website
+        self.fame.name = self.fame.name.str.replace('Richard Geurin',
+                                                    'Richie Guerin')
+
         self.features = None
         self.feature_counts = None
         self.feature_subset = {}
@@ -179,27 +206,11 @@ class Statistics:
         }
         self.stats_fame = None
 
-        try:
-            self.fame = pd.read_csv('https://timothyhelton.github.io/'
-                                    'assets/data/NBA_Hall_of_Fame.csv',
-                                    dtype=self.fame_types,
-                                    header=None,
-                                    index_col=0,
-                                    names=self.fame_types.keys(),
-                                    skiprows=1,
-                                    )
-            logger.info('NBA Hall of Fame Players from '
-                        'https://timothyhelton.github.io')
-        except urllib.error.HTTPError:
-            self.scrape_hall_of_fame()
-        # Dan Issel's name is misspelled on the NBA Hall of Fame website
-        self.fame.name = self.fame.name.str.replace('Dan Issell', 'Dan Issel')
-        # Charles Cooper is listed as Chuck Cooper in the dataset
-        self.fame.name = self.fame.name.str.replace('Charles Cooper',
-                                                    'Chuck Cooper')
-        # Richard Guerin's name is misspelled on the NBA Hall of Fame website
-        self.fame.name = self.fame.name.str.replace('Richard Geurin',
-                                                    'Richie Guerin')
+        self.training_size = 500
+        self.x_test = None
+        self.x_train = None
+        self.y_test = None
+        self.y_train = None
 
         self.load_data()
         self.get_feature_subsets()
@@ -210,7 +221,9 @@ class Statistics:
                 '/hof_birth_locations.csv',
                 index_col=0,
             )
-            logger.info('Loaded Hall of Fame Birth Locations')
+            logger.info('Loaded Hall of Fame Birth Locations from '
+                        'https://timothyhelton.github.io/assets/data/'
+                        'hof_birth_locations.csv')
         except urllib.error.HTTPError:
             self.get_hof_birth_locations()
 
@@ -221,9 +234,9 @@ class Statistics:
         """
         Split data on number of complete season statistics samples.
         """
-        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data',
-                                       'x_train', 'x_test', 'y_train',
-                                       'y_test'])
+        Subset = namedtuple(
+            'Subset', ['data', 'feature_names',
+                       'x_test', 'x_train', 'y_test', 'y_train'])
 
         self.feature_counts = self.features.count().sort_values().unique()
 
@@ -231,17 +244,11 @@ class Statistics:
             data = (self.features
                     .loc[:, self.features.count() >= count]
                     .dropna())
-            names = data.columns
-            scaled_data = (skpre.StandardScaler()
-                           .fit_transform(data))
-            # TODO Move this to a new method
-            x_train, x_test, y_train, y_test = skmodsel.train_test_split(
-                data.drop('response', axis=1),
-                data.response,
-                test_size=0.25)
+            feature_names = data.columns
+            self.get_test_train(data)
             self.feature_subset[count] = Subset(
-                data, names, scaled_data, x_train, x_test, y_train, y_test)
-        logger.debug('Subset Extraction Complete')
+                data, feature_names,
+                self.x_test, self.x_train, self.y_test, self.y_train)
 
     def get_hof_birth_locations(self):
         """
@@ -298,31 +305,30 @@ class Statistics:
             n_components = kpca.n_components
             logger.debug(f'Calculating KPCA Subset: '
                          f'{n + 1} of {len(self.feature_subset)}')
-            kpca.fit(subset.x_train)
-            x_train_kpca = kpca.fit_transform(subset.x_train)
-            x_test_kpca = kpca.transform(subset.x_test)
+            # kpca.fit(subset.x_train)
+            # x_train_kpca = kpca.fit_transform(subset.x_train)
+            # x_test_kpca = kpca.transform(subset.x_test)
 
             lm = sklinmod.LinearRegression()
-            lm.fit(x_train_kpca, subset.y_train)
+            # lm.fit(x_train_kpca, subset.y_train)
 
-            train_score = lm.score(x_train_kpca, subset.y_train)
-            test_score = lm.score(x_test_kpca, subset.y_test)
+            # train_score = lm.score(x_train_kpca, subset.y_train)
+            # test_score = lm.score(x_test_kpca, subset.y_test)
 
-            self.kernel_pca[count] = KPCA(train_score, test_score)
+            # self.kernel_pca[count] = KPCA(train_score, test_score)
         logger.debug('Kernel PCA Complete')
 
     def get_pca(self):
         """
         Perform Principal Component Analysis (PCA).
         """
-        PCA = namedtuple('PCA', [
-            'features', 'fit', 'transform', 'n_components', 'var_pct',
-            'var_pct_cum', 'variance', 'cut_off', 'subset'])
+        PCA = namedtuple(
+            'PCA', ['features', 'fit', 'transform', 'n_components', 'var_pct',
+                    'var_pct_cum', 'variance', 'cut_off', 'subset'])
 
         for count in self.feature_counts:
             subset = self.feature_subset[count]
-            features = subset.names
-            scaled_features = subset.scaled_data
+            scaled_features = np.c_[subset.x_test, subset.y_test]
             pca = skdecomp.PCA()
             fit = pca.fit(scaled_features)
             n_components = pca.n_components_
@@ -336,9 +342,37 @@ class Statistics:
             cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
 
             self.pca[n_components] = PCA(
-                features, fit, transform, n_components, var_pct, var_pct_cum,
-                variance, cut_off, subset.data)
+                subset.feature_names, fit, transform, n_components, var_pct,
+                var_pct_cum, variance, cut_off, subset.data)
         logger.debug('PCA Complete')
+
+    def get_test_train(self, data):
+        """
+        Get balanced test and training datasets by bootstrapping.
+
+        :param DataFrame data: data to be partitioned.
+        """
+        fame = data.query('response == 1')
+        regular = data.query('response == 0')
+
+        fame_boot = fame.sample(n=self.training_size, replace=True)
+        regular_boot = regular.sample(n=self.training_size, replace=True)
+
+        bootstrap = (pd.concat([fame_boot, regular_boot])
+                     .sample(frac=1)
+                     .reset_index(drop=True))
+
+        regular_test = regular.sample(n=fame.shape[0], replace=False)
+        test = (pd.concat([fame, regular_test])
+                .sample(frac=1)
+                .reset_index(drop=True))
+
+        self.x_train = (skpre.StandardScaler()
+                        .fit_transform(bootstrap.drop('response', axis=1)))
+        self.x_test = (skpre.StandardScaler()
+                       .fit_transform(test.drop('response', axis=1)))
+        self.y_train = bootstrap.response
+        self.y_test = test.response
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -707,7 +741,6 @@ class Statistics:
                         .drop('idx', axis=1)
                         .dropna(how='all'))
         self.players.player = self.players.player.str.replace('*', '')
-        logger.debug('Players Dataset Loaded')
 
         with open(season_file, 'r') as f:
             season_text = f.read()
@@ -728,15 +761,12 @@ class Statistics:
 
         # Hall of Fame
         filter_players = self.fame.query('category == "Player"').name
-        logger.debug('Season Stats Dataset Loaded')
 
         self.players_fame = self.players[(self.players.player
                                           .isin(filter_players))]
-        logger.debug('Player Hall of Fame Dataset Loaded')
 
         stats_mask = self.stats.player.isin(filter_players)
         self.stats_fame = self.stats[stats_mask]
-        logger.debug('Stats Hall of Fame Dataset Loaded')
 
         # Features and Response
         self.features = self.stats.drop('player', axis=1)
@@ -746,7 +776,7 @@ class Statistics:
                                   .codes)
         self.features['response'] = 0
         self.features.loc[stats_mask, 'response'] = 1
-        logger.debug('Features Dataset Loaded')
+        logger.info('Datasets Loaded')
 
     def missing_hall_of_fame(self):
         """
