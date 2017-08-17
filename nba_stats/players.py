@@ -17,6 +17,7 @@ from bokeh import models as bkm
 from bs4 import BeautifulSoup
 import geocoder
 import matplotlib.pyplot as plt
+import matplotlib.colors as mplcol
 import numpy as np
 import pandas as pd
 import requests
@@ -365,6 +366,7 @@ class Statistics:
             names = data.columns
             scaled_data = (skpre.StandardScaler()
                            .fit_transform(data))
+            # TODO Move this to a new method
             x_train, x_test, y_train, y_test = skmodsel.train_test_split(
                 data.drop('response', axis=1),
                 data.response,
@@ -669,6 +671,50 @@ class Statistics:
 
         save_fig('hof_college', save, super_title)
         logger.debug('Create Hall of Fame College Attendance Plot')
+
+    def hof_correlation_plot(self, save=False):
+        """
+        Correlation heat map of Hall of Fame statistic features.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Correlation Heatmap', figsize=(16, 14),
+                   facecolor='white', edgecolor='black')
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        correlation = self.stats_fame.corr()
+        cut = 0.5
+        color_mask = (correlation[(correlation > -cut) & (correlation < cut)]
+                      .fillna(0)
+                      .astype(bool))
+        correlation[color_mask] = 0
+
+        cmap = mplcol.LinearSegmentedColormap.from_list(
+            'blue_white_blue', ['indianred', 'white', 'white', 'white', 'C0'])
+
+        sns.heatmap(correlation, center=0,
+                    cmap=cmap,
+                    cbar_kws={'orientation': 'vertical'},
+                    linecolor='lightgray', linewidths=0.1, vmin=-1, vmax=1,
+                    ax=ax0)
+
+        cbar = ax0.collections[0].colorbar
+        cbar.set_ticks(np.arange(-1, 1.5, 0.5).tolist())
+        cbar.ax.tick_params(labelsize=size['label'])
+
+        ax0.set_title('Statistics Correlation (0.5 Threshold)',
+                      fontsize=size['title'])
+        ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(),
+                            fontsize=size['label'], rotation=90)
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['label'], rotation=0)
+
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.03, y=0.93)
+
+        save_fig('hof_correlation', save, super_title)
 
     def hof_percent_plot(self, save=False):
         """
