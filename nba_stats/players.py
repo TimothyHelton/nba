@@ -22,6 +22,8 @@ import pandas as pd
 import requests
 import seaborn as sns
 import sklearn.decomposition as skdecomp
+import sklearn.linear_model as sklinmod
+import sklearn.model_selection as skmodsel
 import sklearn.preprocessing as skpre
 
 from nba_stats.utils import save_fig, size
@@ -70,7 +72,10 @@ class Statistics:
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
-    - **pca**: *dict* Hall of Fame principal component analysis classes
+    - **kernel_pca**: *dict* kernel principal component analysis
+        - keys: *int* number of features
+        - values: *tuple* (train_score, test_score)
+    - **pca**: *dict* principal component analysis
         - keys: *int* number of features
         - values: *tuple* (features, fit, transform, n_components, var_pct, \
             var_pct_cum, variance, cut_off, subset)
@@ -99,6 +104,7 @@ class Statistics:
             self.google_key = None
 
         self.hof_birth_locations = None
+        self.kernel_pca = {}
         self.pca = {}
 
         self.players = None
@@ -306,33 +312,6 @@ class Statistics:
         self.fame = pd.DataFrame(remove_commas, columns=['name', 'category'])
         logger.info('NBA Hall of Fame Players Scraped from www.nba.com')
 
-    def missing_hall_of_fame(self):
-        """
-        Players in the Hall of Fame without entries in the datasets.
-
-        :return: names of players not found in the Players and Season Stats \
-            datasets
-        :rtype: DataFrame
-        """
-        no_players = (self.fame[~self.fame.isin((self.players_fame
-                                                 .player
-                                                 .tolist()))]
-                      .dropna()
-                      .query('category == "Player"')
-                      .name)
-        logger.debug('DIFF players Hall of Fame to Players Dataset complete')
-        no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
-                    .dropna()
-                    .query('category == "Player"')
-                    .name)
-        logger.debug('DIFF players Hall of Fame to Stats Dataset complete')
-        return (pd.concat([no_players, no_stats], axis=1, join='outer',
-                          ignore_index=True)
-                .rename(columns={n: name for n, name
-                                 in enumerate(('player_dataset',
-                                               'stats_dataset'))})
-                .reset_index(drop=True))
-
     def get_hof_birth_locations(self):
         """
         Get male Hall of Fame birth location latitude and longitude values.
@@ -369,6 +348,63 @@ class Statistics:
                                     .set_index('locations'))
         logger.debug('Hall of Fame birth locations loaded')
 
+    def get_feature_subsets(self):
+        """
+        Split data on number of complete season statistics samples.
+        """
+        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data',
+                                       'x_train', 'x_test', 'y_train',
+                                       'y_test'])
+
+        self.feature_counts = self.features.count().sort_values().unique()
+
+        for count in self.feature_counts:
+            data = (self.features
+                    .loc[:, self.features.count() >= count]
+                    .dropna())
+            names = data.columns
+            scaled_data = (skpre.StandardScaler()
+                           .fit_transform(data))
+            x_train, x_test, y_train, y_test = skmodsel.train_test_split(
+                data.drop('response', axis=1),
+                data.response,
+                test_size=0.25)
+            self.feature_subset[count] = Subset(
+                data, names, scaled_data, x_train, x_test, y_train, y_test)
+        logger.debug('Subset Extraction Complete')
+
+    def get_kernel_pca(self, kernel='linear', n_components=10):
+        """
+        Perform Principal Component Analysis (PCA) using the kernel method.
+
+        ..warning:: This is a computationally expensive method.
+
+        :param str kernel: type of kernel to employee
+        :param int n_components: number of principal components
+        """
+        KPCA = namedtuple('KPCA', ['train_score', 'test_score'])
+
+        for n, count in enumerate(self.feature_subset):
+            subset = self.feature_subset[count]
+            # features = subset.names
+            kpca = skdecomp.KernelPCA(kernel=kernel, n_components=n_components,
+                                      n_jobs=-1)
+            n_components = kpca.n_components
+            logger.debug(f'Calculating KPCA Subset: '
+                         f'{n + 1} of {len(self.feature_subset)}')
+            kpca.fit(subset.x_train)
+            x_train_kpca = kpca.fit_transform(subset.x_train)
+            x_test_kpca = kpca.transform(subset.x_test)
+
+            lm = sklinmod.LinearRegression()
+            lm.fit(x_train_kpca, subset.y_train)
+
+            train_score = lm.score(x_train_kpca, subset.y_train)
+            test_score = lm.score(x_test_kpca, subset.y_test)
+
+            self.kernel_pca[count] = KPCA(train_score, test_score)
+        logger.debug('Kernel PCA Complete')
+
     def get_pca(self):
         """
         Perform Principal Component Analysis (PCA).
@@ -396,24 +432,34 @@ class Statistics:
             self.pca[n_components] = PCA(
                 features, fit, transform, n_components, var_pct, var_pct_cum,
                 variance, cut_off, subset.data)
+        logger.debug('PCA Complete')
 
-    def get_feature_subsets(self):
+    def missing_hall_of_fame(self):
         """
-        Split data on number of complete season statistics samples.
+        Players in the Hall of Fame without entries in the datasets.
+
+        :return: names of players not found in the Players and Season Stats \
+            datasets
+        :rtype: DataFrame
         """
-        Subset = namedtuple('Subset', ['data', 'names', 'scaled_data'])
-
-        self.feature_counts = self.features.count().sort_values().unique()
-
-        for count in self.feature_counts:
-            data = (self.features
-                    .loc[:, self.features.count() >= count]
-                    .dropna())
-            names = data.columns
-            scaled_data = (skpre.StandardScaler()
-                           .fit_transform(data))
-            self.feature_subset[count] = Subset(data, names, scaled_data)
-        logger.debug('Subset Extraction Complete')
+        no_players = (self.fame[~self.fame.isin((self.players_fame
+                                                 .player
+                                                 .tolist()))]
+                      .dropna()
+                      .query('category == "Player"')
+                      .name)
+        logger.debug('DIFF players Hall of Fame to Players Dataset complete')
+        no_stats = (self.fame[~self.fame.isin(self.stats.player.unique())]
+                    .dropna()
+                    .query('category == "Player"')
+                    .name)
+        logger.debug('DIFF players Hall of Fame to Stats Dataset complete')
+        return (pd.concat([no_players, no_stats], axis=1, join='outer',
+                          ignore_index=True)
+                .rename(columns={n: name for n, name
+                                 in enumerate(('player_dataset',
+                                               'stats_dataset'))})
+                .reset_index(drop=True))
 
     def hof_birth_loc_plot(self, save=False):
         """
@@ -624,6 +670,85 @@ class Statistics:
         save_fig('hof_college', save, super_title)
         logger.debug('Create Hall of Fame College Attendance Plot')
 
+    def hof_percent_plot(self, save=False):
+        """
+        Large percent image of players to make it to the Hall of Fame.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Percentage', figsize=(6, 2.1),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        hof_qty = self.players_fame.shape[0]
+        all_qty = self.players.shape[0]
+        hof_pct = hof_qty / all_qty * 100
+        ax0.text(x=0, y=0, s=f'{hof_pct:.1f}%', color='C0', fontsize=125,
+                 ha='left', va='bottom')
+        ax0.text(x=0, y=0, s='NBA Players in the Hall of Fame', color='C0',
+                 fontsize=20, ha='left')
+
+        ax0.axis('off')
+
+        save_fig('hof_percent', save)
+        logger.debug('Create Hall of Fame Percent Plot')
+
+    def hof_player_breakdown_plot(self, save=False):
+        """
+        Horizontal bar plot of Hall of Fame player category breakdown.
+
+        :param bool save: if True the figure will be saved
+        """
+        plt.figure('Hall of Fame Player Subcategories', figsize=(12, 3),
+                   facecolor='white', edgecolor=None)
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        total = self.fame.query('category == "Player"').shape[0]
+        nba = self.players_fame.shape[0]
+        categories = (pd.DataFrame([total, nba, 42, 16],
+                                   index=pd.Index(data=['Total', 'NBA',
+                                                        'Non-NBA Men',
+                                                        'Women'],
+                                                  name='Hall of Fame'),
+                                   columns=['inductees'])
+                      .sort_values(by='inductees', ascending=True))
+
+        categories.plot(kind='barh', alpha=0.5, color=['gray'],
+                        edgecolor='black', legend=None, width=0.7, ax=ax0)
+
+        emphasis = categories.index.get_loc('NBA')
+        ax0.patches[emphasis].set_facecolor('C0')
+        ax0.patches[emphasis].set_alpha(0.7)
+
+        for patch in ax0.patches:
+            width = patch.get_width()
+            ax0.text(x=width - 1,
+                     y=patch.get_y() + 0.2,
+                     s=f'{width:.0f}',
+                     fontsize=size['label'],
+                     ha='right')
+
+        ax0.set_title('Player Subcategories', fontsize=size['title'])
+        ax0.set_ylabel('')
+
+        ax0.set_xticklabels('')
+        ax0.xaxis.set_ticks_position('none')
+        ax0.yaxis.set_ticks_position('none')
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['legend'])
+
+        for side in ('top', 'right', 'bottom', 'left'):
+            ax0.spines[side].set_visible(False)
+
+        super_title = plt.suptitle('Hall of Fame Players',
+                                   fontsize=size['super_title'],
+                                   x=0.05, y=1.09)
+
+        save_fig('hof_player_subcategory', save, super_title)
+        logger.debug('Create Hall of Fame Player Subcategory Plot')
+
     @staticmethod
     def pca_plot(pca, save=False):
         """
@@ -711,82 +836,3 @@ class Statistics:
                                    x=0.31, y=1.05)
 
         save_fig('hof_pca', save, super_title)
-
-    def hof_percent_plot(self, save=False):
-        """
-        Large percent image of players to make it to the Hall of Fame.
-
-        :param bool save: if True the figure will be saved
-        """
-        plt.figure('Hall of Fame Percentage', figsize=(6, 2.1),
-                   facecolor='white', edgecolor=None)
-        rows, cols = (1, 1)
-        ax0 = plt.subplot2grid((rows, cols), (0, 0))
-
-        hof_qty = self.players_fame.shape[0]
-        all_qty = self.players.shape[0]
-        hof_pct = hof_qty / all_qty * 100
-        ax0.text(x=0, y=0, s=f'{hof_pct:.1f}%', color='C0', fontsize=125,
-                 ha='left', va='bottom')
-        ax0.text(x=0, y=0, s='NBA Players in the Hall of Fame', color='C0',
-                 fontsize=20, ha='left')
-
-        ax0.axis('off')
-
-        save_fig('hof_percent', save)
-        logger.debug('Create Hall of Fame Percent Plot')
-
-    def hof_player_breakdown_plot(self, save=False):
-        """
-        Horizontal bar plot of Hall of Fame player category breakdown.
-
-        :param bool save: if True the figure will be saved
-        """
-        plt.figure('Hall of Fame Player Subcategories', figsize=(12, 3),
-                   facecolor='white', edgecolor=None)
-        rows, cols = (1, 1)
-        ax0 = plt.subplot2grid((rows, cols), (0, 0))
-
-        total = self.fame.query('category == "Player"').shape[0]
-        nba = self.players_fame.shape[0]
-        categories = (pd.DataFrame([total, nba, 42, 16],
-                                   index=pd.Index(data=['Total', 'NBA',
-                                                        'Non-NBA Men',
-                                                        'Women'],
-                                                  name='Hall of Fame'),
-                                   columns=['inductees'])
-                      .sort_values(by='inductees', ascending=True))
-
-        categories.plot(kind='barh', alpha=0.5, color=['gray'],
-                        edgecolor='black', legend=None, width=0.7, ax=ax0)
-
-        emphasis = categories.index.get_loc('NBA')
-        ax0.patches[emphasis].set_facecolor('C0')
-        ax0.patches[emphasis].set_alpha(0.7)
-
-        for patch in ax0.patches:
-            width = patch.get_width()
-            ax0.text(x=width - 1,
-                     y=patch.get_y() + 0.2,
-                     s=f'{width:.0f}',
-                     fontsize=size['label'],
-                     ha='right')
-
-        ax0.set_title('Player Subcategories', fontsize=size['title'])
-        ax0.set_ylabel('')
-
-        ax0.set_xticklabels('')
-        ax0.xaxis.set_ticks_position('none')
-        ax0.yaxis.set_ticks_position('none')
-        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
-                            fontsize=size['legend'])
-
-        for side in ('top', 'right', 'bottom', 'left'):
-            ax0.spines[side].set_visible(False)
-
-        super_title = plt.suptitle('Hall of Fame Players',
-                                   fontsize=size['super_title'],
-                                   x=0.05, y=1.09)
-
-        save_fig('hof_player_subcategory', save, super_title)
-        logger.debug('Create Hall of Fame Player Subcategory Plot')
