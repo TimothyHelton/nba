@@ -23,7 +23,10 @@ import pandas as pd
 import requests
 import seaborn as sns
 import sklearn.decomposition as skdecomp
+import sklearn.discriminant_analysis as skdisc
 import sklearn.linear_model as sklinmod
+import sklearn.metrics as skmetric
+import sklearn.naive_bayes as sknb
 import sklearn.preprocessing as skpre
 
 from nba_stats.utils import save_fig, size
@@ -63,6 +66,8 @@ class Statistics:
 
     :Attributes:
 
+    - **classify**: *namedtuple* classification models
+    - **evaluate**: *dict*
     - **fame**: *Series* players in the Hall of Fame
     - **features**: *DataFrame* model features
     - **feature_counts**: *list* quantities of samples with complete data for \
@@ -96,6 +101,8 @@ class Statistics:
     - **stats_types**: *dict* data types for season statistics dataset
     """
     def __init__(self):
+        self.classify = {}
+        self.evaluate = {}
         self.fame_types = {
             'name': str,
             'category': 'category'
@@ -230,18 +237,75 @@ class Statistics:
     def __repr__(self):
         return 'Statistics()'
 
-    def classify_players(self):
+    def classify_players(self, data, model='LR'):
         """
-        Classify players to be in the Hall of Fame or not.
-        :return:
+        Classify Data
+
+        :param namedtuple data: object
+        :param str model: model designator (see table below for \
+            implemented types)
+
+        +------------------+-------------------------------+
+        | Model Designator | Scikit-Learn Model Type       |
+        +==================+===============================+
+        | LDA              | LinearDiscriminantAnalysis    |
+        +------------------+-------------------------------+
+        | LR               | LogisticRegression            |
+        +------------------+-------------------------------+
+        | NB               | GaussianNB                    |
+        +------------------+-------------------------------+
+        | QDA              | QuadraticDiscriminantAnalysis |
+        +------------------+-------------------------------+
         """
-        pass
+        Classify = namedtuple(
+            'Classify', ['classify_report', 'confusion', 'model',
+                         'score_test', 'score_train']
+        )
 
-        # lm = sklinmod.LinearRegression()
-        # lm.fit(x_train_kpca, subset.y_train)
+        models = {
+            'LDA': skdisc.LinearDiscriminantAnalysis(),
+            'LR': sklinmod.LogisticRegression(),
+            'NB': sknb.GaussianNB(),
+            'QDA': skdisc.QuadraticDiscriminantAnalysis(),
+        }
 
-        # train_score = lm.score(x_train_kpca, subset.y_train)
-        # test_score = lm.score(x_test_kpca, subset.y_test)
+        if model not in models.keys():
+            logger.error(f'Requested model {model} has not been implemented.')
+
+        classify = (models[model]
+                    .fit(data.x_train, data.y_train))
+        score_train = classify.score(data.x_train, data.y_train)
+        score_test = classify.score(data.x_test, data.y_test)
+
+        predict = classify.predict(data.x_test)
+        confusion = pd.DataFrame((skmetric
+                                  .confusion_matrix(data.y_test, predict)))
+        classify_report = (skmetric
+                           .classification_report(data.y_test, predict))
+        features = len(data.feature_names) - 1
+        self.classify[features] = Classify(
+            classify_report, confusion, classify, score_test, score_train)
+
+    def evaluate_classification(self):
+        """
+        Evaluate all available models on all subsets of data.
+        """
+        self.get_pca()
+
+        models = {'LDA': [], 'LR': [], 'NB': [], 'QDA': []}
+        for features in self.pca:
+            # self.evaluate[features] = {}
+            for model in models.keys():
+                self.classify_players(self.pca[features], model=model)
+                score_test = self.classify[features].score_test
+                score_train = self.classify[features].score_train
+                models[model].extend([score_test, score_train])
+
+        iterables = [self.pca.keys(), ['test', 'train']]
+        column_idx = pd.MultiIndex.from_product(iterables,
+                                                names=['features', 'score'])
+        self.evaluate = pd.DataFrame(list(models.values()),
+                                     index=models.keys(), columns=column_idx)
 
     def get_feature_subsets(self):
         """
@@ -249,7 +313,8 @@ class Statistics:
         """
         Subset = namedtuple(
             'Subset', ['data', 'feature_names',
-                       'x_test', 'x_train', 'y_test', 'y_train'])
+                       'x_test', 'x_train', 'y_test', 'y_train']
+        )
 
         self.feature_counts = self.features.count().sort_values().unique()
 
@@ -310,7 +375,8 @@ class Statistics:
         """
         KPCA = namedtuple(
             'KPCA', ['feature_names', 'fit', 'model', 'n_components', 'subset',
-                     'x_test_kpca', 'x_train_kpca', 'y_test', 'y_train'])
+                     'x_test', 'x_train', 'y_test', 'y_train']
+        )
 
         for n, count in enumerate(self.feature_subset):
             subset = self.feature_subset[count]
@@ -335,7 +401,8 @@ class Statistics:
         PCA = namedtuple(
             'PCA', ['cut_off', 'feature_names', 'fit', 'model', 'n_components',
                     'subset', 'var_pct', 'var_pct_cum', 'variance',
-                    'x_test_pca', 'x_train_pca', 'y_test', 'y_train'])
+                    'x_test', 'x_train', 'y_test', 'y_train']
+        )
 
         for count in self.feature_counts:
             subset = self.feature_subset[count]
