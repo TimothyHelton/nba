@@ -230,6 +230,19 @@ class Statistics:
     def __repr__(self):
         return 'Statistics()'
 
+    def classify_players(self):
+        """
+        Classify players to be in the Hall of Fame or not.
+        :return:
+        """
+        pass
+
+        # lm = sklinmod.LinearRegression()
+        # lm.fit(x_train_kpca, subset.y_train)
+
+        # train_score = lm.score(x_train_kpca, subset.y_train)
+        # test_score = lm.score(x_test_kpca, subset.y_test)
+
     def get_feature_subsets(self):
         """
         Split data on number of complete season statistics samples.
@@ -295,27 +308,24 @@ class Statistics:
         :param str kernel: type of kernel to employee
         :param int n_components: number of principal components
         """
-        KPCA = namedtuple('KPCA', ['train_score', 'test_score'])
+        KPCA = namedtuple(
+            'KPCA', ['feature_names', 'fit', 'model', 'n_components', 'subset',
+                     'x_test_kpca', 'x_train_kpca', 'y_test', 'y_train'])
 
         for n, count in enumerate(self.feature_subset):
             subset = self.feature_subset[count]
-            # features = subset.names
             kpca = skdecomp.KernelPCA(kernel=kernel, n_components=n_components,
                                       n_jobs=-1)
-            n_components = kpca.n_components
             logger.debug(f'Calculating KPCA Subset: '
                          f'{n + 1} of {len(self.feature_subset)}')
-            # kpca.fit(subset.x_train)
-            # x_train_kpca = kpca.fit_transform(subset.x_train)
-            # x_test_kpca = kpca.transform(subset.x_test)
+            fit = kpca.fit(subset.x_test, subset.y_test)
+            x_train_kpca = kpca.fit_transform(subset.x_train)
+            x_test_kpca = kpca.transform(subset.x_test)
 
-            lm = sklinmod.LinearRegression()
-            # lm.fit(x_train_kpca, subset.y_train)
+            self.kernel_pca[count] = KPCA(
+                subset.feature_names, fit, kpca, n_components, subset.data,
+                x_test_kpca, x_train_kpca, subset.y_test, subset.y_train)
 
-            # train_score = lm.score(x_train_kpca, subset.y_train)
-            # test_score = lm.score(x_test_kpca, subset.y_test)
-
-            # self.kernel_pca[count] = KPCA(train_score, test_score)
         logger.debug('Kernel PCA Complete')
 
     def get_pca(self):
@@ -323,16 +333,17 @@ class Statistics:
         Perform Principal Component Analysis (PCA).
         """
         PCA = namedtuple(
-            'PCA', ['features', 'fit', 'transform', 'n_components', 'var_pct',
-                    'var_pct_cum', 'variance', 'cut_off', 'subset'])
+            'PCA', ['cut_off', 'feature_names', 'fit', 'model', 'n_components',
+                    'subset', 'var_pct', 'var_pct_cum', 'variance',
+                    'x_test_pca', 'x_train_pca', 'y_test', 'y_train'])
 
         for count in self.feature_counts:
             subset = self.feature_subset[count]
-            scaled_features = np.c_[subset.x_test, subset.y_test]
             pca = skdecomp.PCA()
-            fit = pca.fit(scaled_features)
+            fit = pca.fit(subset.x_test, subset.y_test)
+            x_train_pca = pca.fit_transform(subset.x_train)
+            x_test_pca = pca.transform(subset.x_test)
             n_components = pca.n_components_
-            transform = pca.transform(subset.data)
 
             var_pct = fit.explained_variance_ratio_
             var_pct_cum = var_pct.cumsum()
@@ -342,8 +353,10 @@ class Statistics:
             cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
 
             self.pca[n_components] = PCA(
-                subset.feature_names, fit, transform, n_components, var_pct,
-                var_pct_cum, variance, cut_off, subset.data)
+                cut_off, subset.feature_names, fit, pca, n_components,
+                subset.data, var_pct, var_pct_cum, variance,
+                x_test_pca, x_train_pca, subset.y_test, subset.y_train)
+
         logger.debug('PCA Complete')
 
     def get_test_train(self, data):
@@ -846,13 +859,14 @@ class Statistics:
                      s=f'{height * 100:1.0f}%',
                      ha='center')
 
-        fame = pca.subset['response'].values.astype('bool')
-        out = np.invert(fame)
+        fame = pca.y_train.values.astype('bool')
+        reg = np.invert(fame)
 
-        ax1.scatter(x=pca.transform[out][:, 0], y=pca.transform[out][:, 1],
+        ax1.scatter(x=pca.x_train_pca[reg][:, 0], y=pca.x_train_pca[reg][:, 1],
                     alpha=0.5, color='gray', label='Regular Players',
                     marker='o')
-        ax1.scatter(x=pca.transform[fame][:, 0], y=pca.transform[fame][:, 1],
+        ax1.scatter(x=pca.x_train_pca[fame][:, 0],
+                    y=pca.x_train_pca[fame][:, 1],
                     alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax1.set_title('$2^{nd}$ vs $1^{st}$ Principal Component',
@@ -860,10 +874,11 @@ class Statistics:
         ax1.set_xlabel('$1^{st}$ Principal Component', fontsize=size['label'])
         ax1.set_ylabel('$2^{nd}$ Principal Component', fontsize=size['label'])
 
-        ax2.scatter(x=pca.transform[out][:, 1], y=pca.transform[out][:, 2],
+        ax2.scatter(x=pca.x_train_pca[reg][:, 1], y=pca.x_train_pca[reg][:, 2],
                     alpha=0.5, color='gray', label='Regular Players',
                     marker='o')
-        ax2.scatter(x=pca.transform[fame][:, 1], y=pca.transform[fame][:, 2],
+        ax2.scatter(x=pca.x_train_pca[fame][:, 1],
+                    y=pca.x_train_pca[fame][:, 2],
                     alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax2.set_title('$3^{rd}$ vs $2^{nd}$ Principal Component',
@@ -886,10 +901,10 @@ class Statistics:
             ax.get_yaxis().set_ticks([])
 
         plt.tight_layout()
-        super_title = plt.suptitle('Principal Components Analysis: '
-                                   f'{pca.n_components:3.0f} Features',
+        super_title = plt.suptitle('Principal Components Analysis Training '
+                                   f'Model: {pca.n_components:3.0f} Features',
                                    fontsize=size['super_title'],
-                                   x=0.31, y=1.05)
+                                   x=0.41, y=1.05)
 
         save_fig('hof_pca', save, super_title)
 
