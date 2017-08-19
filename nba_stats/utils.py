@@ -11,6 +11,7 @@ from matplotlib.ticker import FuncFormatter
 
 ax_formatter = {
     'billions': FuncFormatter(lambda x, position: f'{x * 1e-9:.0f}'),
+    'integer': FuncFormatter(lambda x, position: f'{x:.0f}'),
     'millions': FuncFormatter(lambda x, position: f'{x * 1e-6:.0f}'),
     'percent_convert': FuncFormatter(lambda x, position: f'{x * 100:.0f}%'),
     'percent': FuncFormatter(lambda x, position: f'{x * 100:.0f}%'),
