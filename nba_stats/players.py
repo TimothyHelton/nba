@@ -102,7 +102,7 @@ class Statistics:
     """
     def __init__(self):
         self.classify = {}
-        self.evaluate = {}
+        self.evaluate = None
         self.fame_types = {
             'name': str,
             'category': 'category'
@@ -306,6 +306,59 @@ class Statistics:
                                                 names=['features', 'score'])
         self.evaluate = pd.DataFrame(list(models.values()),
                                      index=models.keys(), columns=column_idx)
+
+    def evaluation_plot(self, save=False):
+        """
+        Evaluation heat map of classification models.
+
+        :param bool save: if True the figure will be saved
+        """
+        self.evaluate_classification()
+
+        plt.figure('Evaluation Heatmap', figsize=(3, 10),
+                   facecolor='white', edgecolor='black')
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        data = self.evaluate.xs('test', level='score', axis=1)
+        cut = 0.8
+        color_mask = (data[(data > -cut) & (data < cut)]
+                      .fillna(0)
+                      .astype(bool))
+        data[color_mask] = np.nan
+
+        cmap = mplcol.LinearSegmentedColormap.from_list(
+            'white_blue', ['white'] * 8 + ['C0'] * 2)
+
+        sns.heatmap(data.T, annot=True, cmap=cmap,
+                    cbar_kws={'orientation': 'vertical'}, fmt='.2f',
+                    linecolor='lightgray', linewidths=0.1, vmin=0, vmax=1,
+                    ax=ax0)
+
+        cbar = ax0.collections[0].colorbar
+        cbar.set_ticks([0, 0.5, 1])
+        cbar.ax.tick_params(labelsize=size['label'])
+        cbar.outline.set_linewidth(1)
+        cbar.outline.set_edgecolor('lightgray')
+
+        ax0.set_title('Test Validation Score (0.8 Threshold)',
+                      fontsize=size['label'])
+        ax0.set_ylabel('Number of Features', fontsize=size['label'])
+        model_names = ['Linear Discriminant Analysis',
+                       'Logistic Regression',
+                       'Naive Bayes',
+                       'Quadratic Discriminant Analysis'
+                       ]
+        ax0.set_xticklabels(model_names,
+                            fontsize=size['label'], rotation=90)
+        ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                            fontsize=size['label'], rotation=0)
+
+        super_title = plt.suptitle('Classification Model Comparision',
+                                   fontsize=size['super_title'],
+                                   x=0.5, y=0.95)
+
+        save_fig('evaluation', save, super_title)
 
     def get_feature_subsets(self):
         """
@@ -682,7 +735,7 @@ class Statistics:
         correlation[color_mask] = 0
 
         cmap = mplcol.LinearSegmentedColormap.from_list(
-            'blue_white_blue', ['indianred', 'white', 'white', 'white', 'C0'])
+            'blue_white_blue', ['indianred'] + ['white'] * 3 + ['C0'])
 
         sns.heatmap(correlation, center=0,
                     cmap=cmap,
@@ -693,6 +746,8 @@ class Statistics:
         cbar = ax0.collections[0].colorbar
         cbar.set_ticks(np.arange(-1, 1.5, 0.5).tolist())
         cbar.ax.tick_params(labelsize=size['label'])
+        cbar.outline.set_linewidth(1)
+        cbar.outline.set_edgecolor('lightgray')
 
         ax0.set_title('Statistics Correlation (0.5 Threshold)',
                       fontsize=size['title'])
