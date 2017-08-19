@@ -44,7 +44,7 @@ date_format = '%m/%d/%Y %I:%M:%S'
 logging.basicConfig(format=log_format, datefmt=date_format,
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 current_dir = osp.dirname(osp.realpath(__file__))
 data_dir = osp.realpath(osp.join(current_dir, '..', 'data'))
@@ -66,8 +66,14 @@ class Statistics:
 
     :Attributes:
 
-    - **classify**: *namedtuple* classification models
-    - **evaluate**: *dict*
+    - **classify**: *namedtuple* classification model
+        - fields:
+            - classify_report
+            - confusion
+            - model
+            - score_test
+            - score_train
+    - **evaluate**: *dict* model test and train scores
     - **fame**: *Series* players in the Hall of Fame
     - **features**: *DataFrame* model features
     - **feature_counts**: *list* quantities of samples with complete data for \
@@ -87,6 +93,8 @@ class Statistics:
     - **kernel_pca**: *dict* kernel principal component analysis
         - keys: *int* number of features
         - values: *tuple* (train_score, test_score)
+    - **optimal_model**: *DataFrame* optimal model and feature quantity based \
+        on test score
     - **pca**: *dict* principal component analysis
         - keys: *int* number of features
         - values: *tuple* (features, fit, transform, n_components, var_pct, \
@@ -95,6 +103,7 @@ class Statistics:
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
     - **players_types**: *dict* data types for player dataset
+    - **seed**: *int* random seed value for samples
     - **stats**: *DataFrame* season statistics dataset
     - **stats_fame**: *DataFrame* stats dataset filtered to only include \
         Hall of Fame members
@@ -140,6 +149,7 @@ class Statistics:
 
         self.hof_birth_locations = None
         self.kernel_pca = {}
+        self.optimal_model = None
         self.pca = {}
 
         self.players = None
@@ -154,6 +164,8 @@ class Statistics:
             'birth_state': 'category',                      # birth_state
         }
         self.players_fame = None
+
+        self.seed = 2
 
         self.stats = None
         self.stats_types = {
@@ -294,7 +306,6 @@ class Statistics:
 
         models = {'LDA': [], 'LR': [], 'NB': [], 'QDA': []}
         for features in self.pca:
-            # self.evaluate[features] = {}
             for model in models.keys():
                 self.classify_players(self.pca[features], model=model)
                 score_test = self.classify[features].score_test
@@ -306,6 +317,30 @@ class Statistics:
                                                 names=['features', 'score'])
         self.evaluate = pd.DataFrame(list(models.values()),
                                      index=models.keys(), columns=column_idx)
+
+    def evaluate_models(self, evaluations=10):
+        """
+        Determine the model and features that yield highest test score.
+
+        :param int evaluations: number of evaluation cycles to perform
+        """
+        self.seed = None
+        optimal_features = []
+        for n in range(int(evaluations)):
+            self.get_feature_subsets()
+            logger.info(f'Evaluation:\t{n + 1:3.0f} / {evaluations}')
+            self.evaluate_classification()
+            max_sample = (self.evaluate
+                          .xs('test', level='score', axis=1)
+                          .max(axis=1))
+            model = max_sample.argmax()
+            max_model = self.evaluate.loc[model][:, 'test']
+            features = (max_model
+                        .loc[max_model == max_sample.max()]
+                        .argmax())
+            optimal_features.append([model, features])
+        self.optimal_model = pd.DataFrame(optimal_features,
+                                          columns=['model', 'features'])
 
     def evaluation_plot(self, save=False):
         """
@@ -358,7 +393,7 @@ class Statistics:
                                    fontsize=size['super_title'],
                                    x=0.5, y=0.95)
 
-        save_fig('evaluation', save, super_title)
+        save_fig('model_evaluation', save, super_title)
 
     def get_feature_subsets(self):
         """
@@ -483,21 +518,25 @@ class Statistics:
         """
         Get balanced test and training datasets by bootstrapping.
 
-        :param DataFrame data: data to be partitioned.
+        :param DataFrame data: data to be partitioned
         """
         fame = data.query('response == 1')
         regular = data.query('response == 0')
 
-        fame_boot = fame.sample(n=self.training_size, replace=True)
-        regular_boot = regular.sample(n=self.training_size, replace=True)
+        fame_boot = fame.sample(n=self.training_size,
+                                random_state=self.seed, replace=True)
+        regular_boot = regular.sample(n=self.training_size,
+                                      random_state=self.seed,
+                                      replace=True)
 
         bootstrap = (pd.concat([fame_boot, regular_boot])
-                     .sample(frac=1)
+                     .sample(frac=1, random_state=self.seed)
                      .reset_index(drop=True))
 
-        regular_test = regular.sample(n=fame.shape[0], replace=False)
+        regular_test = regular.sample(n=fame.shape[0],
+                                      random_state=self.seed, replace=False)
         test = (pd.concat([fame, regular_test])
-                .sample(frac=1)
+                .sample(frac=1, random_state=self.seed)
                 .reset_index(drop=True))
 
         self.x_train = (skpre.StandardScaler()
@@ -539,7 +578,7 @@ class Statistics:
         for patch in high:
             position = locations.index.get_loc(patch)
             ax0.patches[position].set_facecolor('C0')
-            ax0.patches[position].set_alpha(0.9)
+            ax0.patches[position].set_alpha(0.7)
 
         for patch in ax0.patches:
             width = patch.get_width()
@@ -940,6 +979,54 @@ class Statistics:
                                                'stats_dataset'))})
                 .reset_index(drop=True))
 
+    def optimal_features_plot(self, evaluations=100, save=False):
+        """
+        Histogram of optimal feature distribution.
+
+        :param int evaluations: number of random evaluations
+        :param bool save: if True the figure will be saved
+        """
+        self.evaluate_models(evaluations=evaluations)
+
+        plt.figure('Optimal Features Distribution Plot', figsize=(6, 8),
+                   facecolor='white', edgecolor='black')
+        rows, cols = (1, 1)
+        ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+        data = (self.optimal_model
+                .set_index('model')
+                .features
+                .value_counts()
+                .sort_index())
+        (data
+         .plot(kind='bar', alpha=0.5, color='gray',
+               edgecolor='black', legend=False, ax=ax0))
+
+        max_height = 0
+        tallest_patch = None
+        for patch in ax0.patches:
+            height = patch.get_height()
+            if height > max_height:
+                max_height = height
+                tallest_patch = patch
+
+        tallest_patch.set_facecolor('C0')
+        tallest_patch.set_alpha(0.7)
+
+        ax0.set_title(f'Generated Cycles: {evaluations}',
+                      fontsize=size['title'])
+        ax0.set_xlabel('Number of Model Features', fontsize=size['label'])
+        ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(), rotation=0)
+        ax0.set_ylabel('Count', fontsize=size['label'])
+
+        for side in ('top', 'right'):
+            ax0.spines[side].set_visible(False)
+
+        super_title = plt.suptitle('Optimal Model Features',
+                                   fontsize=size['super_title'], x=0.35)
+
+        save_fig('optimal_features', save, super_title)
+
     @staticmethod
     def pca_plot(pca, save=False):
         """
@@ -984,11 +1071,11 @@ class Statistics:
         fame = pca.y_train.values.astype('bool')
         reg = np.invert(fame)
 
-        ax1.scatter(x=pca.x_train_pca[reg][:, 0], y=pca.x_train_pca[reg][:, 1],
+        ax1.scatter(x=pca.x_train[reg][:, 0], y=pca.x_train[reg][:, 1],
                     alpha=0.5, color='gray', label='Regular Players',
                     marker='o')
-        ax1.scatter(x=pca.x_train_pca[fame][:, 0],
-                    y=pca.x_train_pca[fame][:, 1],
+        ax1.scatter(x=pca.x_train[fame][:, 0],
+                    y=pca.x_train[fame][:, 1],
                     alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax1.set_title('$2^{nd}$ vs $1^{st}$ Principal Component',
@@ -996,11 +1083,11 @@ class Statistics:
         ax1.set_xlabel('$1^{st}$ Principal Component', fontsize=size['label'])
         ax1.set_ylabel('$2^{nd}$ Principal Component', fontsize=size['label'])
 
-        ax2.scatter(x=pca.x_train_pca[reg][:, 1], y=pca.x_train_pca[reg][:, 2],
+        ax2.scatter(x=pca.x_train[reg][:, 1], y=pca.x_train[reg][:, 2],
                     alpha=0.5, color='gray', label='Regular Players',
                     marker='o')
-        ax2.scatter(x=pca.x_train_pca[fame][:, 1],
-                    y=pca.x_train_pca[fame][:, 2],
+        ax2.scatter(x=pca.x_train[fame][:, 1],
+                    y=pca.x_train[fame][:, 2],
                     alpha=0.7, color='C0', label='Hall of Fame', marker='d')
 
         ax2.set_title('$3^{rd}$ vs $2^{nd}$ Principal Component',
@@ -1028,7 +1115,7 @@ class Statistics:
                                    fontsize=size['super_title'],
                                    x=0.41, y=1.05)
 
-        save_fig('hof_pca', save, super_title)
+        save_fig('pca', save, super_title)
 
     def scrape_hall_of_fame(self):
         """
