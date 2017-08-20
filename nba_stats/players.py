@@ -360,7 +360,7 @@ class Statistics:
         color_mask = (data[(data > -cut) & (data < cut)]
                       .fillna(0)
                       .astype(bool))
-        data[color_mask] = np.nan
+        data = data.mask(color_mask)
 
         cmap = mplcol.LinearSegmentedColormap.from_list(
             'white_blue', ['white'] * 8 + ['C0'] * 2)
@@ -495,7 +495,7 @@ class Statistics:
         for count in self.feature_counts:
             subset = self.feature_subset[count]
             pca = skdecomp.PCA()
-            fit = pca.fit(subset.x_test, subset.y_test)
+            fit = pca.fit(subset.x_train, subset.y_train)
             x_train_pca = pca.fit_transform(subset.x_train)
             x_test_pca = pca.transform(subset.x_test)
             n_components = pca.n_components_
@@ -514,37 +514,44 @@ class Statistics:
 
         logger.debug('PCA Complete')
 
-    def get_test_train(self, data):
+    def get_test_train(self, data, test_split=0.2):
         """
         Get balanced test and training datasets by bootstrapping.
 
         :param DataFrame data: data to be partitioned
+        :param float test_split: test set percentage
         """
         fame = data.query('response == 1')
         regular = data.query('response == 0')
 
-        fame_boot = fame.sample(n=self.training_size,
-                                random_state=self.seed, replace=True)
-        regular_boot = regular.sample(n=self.training_size,
-                                      random_state=self.seed,
-                                      replace=True)
+        fame_test = fame.sample(frac=test_split, random_state=self.seed,
+                                replace=False)
+        fame_train = fame_test[~fame_test.duplicated(keep=False)]
+
+        regular_test = regular.sample(n=fame_test.shape[0],
+                                      random_state=self.seed, replace=False)
+        regular_train = regular_test[~regular_test.duplicated(keep=False)]
+
+        fame_boot = fame_train.sample(n=self.training_size,
+                                      random_state=self.seed, replace=True)
+        regular_boot = regular_train.sample(n=self.training_size,
+                                            random_state=self.seed,
+                                            replace=True)
 
         bootstrap = (pd.concat([fame_boot, regular_boot])
                      .sample(frac=1, random_state=self.seed)
                      .reset_index(drop=True))
 
-        regular_test = regular.sample(n=fame.shape[0],
-                                      random_state=self.seed, replace=False)
-        test = (pd.concat([fame, regular_test])
+        test = (pd.concat([fame_test, regular_test])
                 .sample(frac=1, random_state=self.seed)
                 .reset_index(drop=True))
 
-        self.x_train = (skpre.StandardScaler()
-                        .fit_transform(bootstrap.drop('response', axis=1)))
         self.x_test = (skpre.StandardScaler()
                        .fit_transform(test.drop('response', axis=1)))
-        self.y_train = bootstrap.response
+        self.x_train = (skpre.StandardScaler()
+                        .fit_transform(bootstrap.drop('response', axis=1)))
         self.y_test = test.response
+        self.y_train = bootstrap.response
 
     def hof_birth_loc_plot(self, save=False):
         """
