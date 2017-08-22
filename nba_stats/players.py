@@ -75,7 +75,7 @@ def confusion_plot(matrix, save=False):
     sns.heatmap(matrix, alpha=0.5, annot=True,
                 annot_kws={'size': 14},
                 cmap=cmap, cbar=False, fmt='.0f', linecolor='lightgray',
-                linewidths=0.1, vmin=0, vmax=matrix_max, ax=ax0)
+                linewidths=1, vmin=0, vmax=matrix_max, ax=ax0)
 
     ax0.xaxis.tick_top()
     ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(),
@@ -202,7 +202,7 @@ class Statistics:
         }
         self.players_fame = None
 
-        self.seed = 2
+        self.seed = 0
 
         self.stats = None
         self.stats_types = {
