@@ -52,6 +52,43 @@ players_file = osp.join(data_dir, 'Players.csv')
 season_file = osp.join(data_dir, 'Seasons_Stats.csv')
 
 
+def confusion_plot(matrix, save=False):
+    """
+    Create confusion matrix table.
+
+    :param DataFrame matrix: confusion matrix to be plotted
+    :param bool save: if True the figure will be saved
+    """
+    plt.figure('Confusion Matrix', figsize=(3, 3),
+               facecolor='white', edgecolor='black')
+    rows, cols = (1, 1)
+    ax0 = plt.subplot2grid((rows, cols), (0, 0))
+
+    labels = ['False', 'True']
+    matrix.index = labels
+    matrix.columns = labels
+    matrix_max = matrix.values.max()
+
+    cmap = mplcol.LinearSegmentedColormap.from_list(
+        'white_blue', ['white'] * 2 + ['C0'])
+
+    sns.heatmap(matrix, alpha=0.5, annot=True,
+                annot_kws={'size': 14},
+                cmap=cmap, cbar=False, fmt='.0f', linecolor='lightgray',
+                linewidths=0.1, vmin=0, vmax=matrix_max, ax=ax0)
+
+    ax0.xaxis.tick_top()
+    ax0.set_xticklabels(ax0.xaxis.get_majorticklabels(),
+                        fontsize=size['label'])
+    ax0.set_yticklabels(ax0.yaxis.get_majorticklabels(),
+                        fontsize=size['label'], rotation=0)
+
+    super_title = plt.suptitle('Confusion Matrix',
+                               fontsize=size['super_title'], x=0.38, y=1.12)
+
+    save_fig('confusion_matrix', save, super_title)
+
+
 class Statistics:
     """
     Methods and attributes related to NBA player statistics.
