@@ -270,6 +270,7 @@ class Statistics:
 
         self.load_data()
         self.get_feature_subsets()
+        self.get_pca()
 
         try:
             self.hof_birth_locations = pd.read_csv(
