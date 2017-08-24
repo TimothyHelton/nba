@@ -89,6 +89,29 @@ def confusion_plot(matrix, save=False):
     save_fig('confusion_matrix', save, super_title)
 
 
+Classify = namedtuple(
+    'Classify', ['classify_report', 'confusion', 'model',
+                 'score_test', 'score_train']
+)
+
+Subset = namedtuple(
+    'Subset', ['data', 'feature_names', 'players',
+               'x_test', 'x_train', 'y_test', 'y_train']
+)
+
+KPCA = namedtuple(
+    'KPCA', ['feature_names', 'fit', 'model', 'n_components',
+             'players', 'subset',
+             'x_test', 'x_train', 'y_test', 'y_train']
+)
+
+PCA = namedtuple(
+    'PCA', ['cut_off', 'feature_names', 'fit', 'model', 'n_components',
+            'players', 'subset', 'var_pct', 'var_pct_cum', 'variance',
+            'x_test', 'x_train', 'y_test', 'y_train']
+)
+
+
 class Statistics:
     """
     Methods and attributes related to NBA player statistics.
@@ -307,11 +330,6 @@ class Statistics:
         | QDA              | QuadraticDiscriminantAnalysis |
         +------------------+-------------------------------+
         """
-        Classify = namedtuple(
-            'Classify', ['classify_report', 'confusion', 'model',
-                         'score_test', 'score_train']
-        )
-
         models = {
             'LDA': skdisc.LinearDiscriminantAnalysis(),
             'LR': sklinmod.LogisticRegression(),
@@ -333,6 +351,7 @@ class Statistics:
         classify_report = (skmetric
                            .classification_report(data.y_test, predict))
         features = len(data.feature_names) - 1
+        # TODO replace namedtuple with class attributes
         self.classify[features] = Classify(
             classify_report, confusion, classify, score_test, score_train)
 
@@ -437,22 +456,23 @@ class Statistics:
         """
         Split data on number of complete season statistics samples.
         """
-        Subset = namedtuple(
-            'Subset', ['data', 'feature_names',
-                       'x_test', 'x_train', 'y_test', 'y_train']
-        )
+        record_counts = self.features.count().sort_values().unique()
 
-        self.feature_counts = self.features.count().sort_values().unique()
-
-        for count in self.feature_counts:
+        for count in record_counts:
             data = (self.features
                     .loc[:, self.features.count() >= count]
                     .dropna())
+            players = (self.stats
+                       .loc[:, self.stats.count() >= count]
+                       .dropna()
+                       .player)
             feature_names = data.columns
             self.get_test_train(data)
-            self.feature_subset[count] = Subset(
-                data, feature_names,
+            self.feature_subset[len(feature_names)] = Subset(
+                data, feature_names, players,
                 self.x_test, self.x_train, self.y_test, self.y_train)
+
+        self.feature_counts = self.feature_subset.keys()
 
     def get_hof_birth_locations(self):
         """
@@ -499,11 +519,6 @@ class Statistics:
         :param str kernel: type of kernel to employee
         :param int n_components: number of principal components
         """
-        KPCA = namedtuple(
-            'KPCA', ['feature_names', 'fit', 'model', 'n_components', 'subset',
-                     'x_test', 'x_train', 'y_test', 'y_train']
-        )
-
         for n, count in enumerate(self.feature_subset):
             subset = self.feature_subset[count]
             kpca = skdecomp.KernelPCA(kernel=kernel, n_components=n_components,
@@ -514,9 +529,11 @@ class Statistics:
             x_train_kpca = kpca.fit_transform(subset.x_train)
             x_test_kpca = kpca.transform(subset.x_test)
 
+            # TODO replace namedtuple with class attributes
             self.kernel_pca[count] = KPCA(
-                subset.feature_names, fit, kpca, n_components, subset.data,
-                x_test_kpca, x_train_kpca, subset.y_test, subset.y_train)
+                subset.feature_names, fit, kpca, n_components, subset.players,
+                subset.data, x_test_kpca, x_train_kpca, subset.y_test,
+                subset.y_train)
 
         logger.debug('Kernel PCA Complete')
 
@@ -524,12 +541,6 @@ class Statistics:
         """
         Perform Principal Component Analysis (PCA).
         """
-        PCA = namedtuple(
-            'PCA', ['cut_off', 'feature_names', 'fit', 'model', 'n_components',
-                    'subset', 'var_pct', 'var_pct_cum', 'variance',
-                    'x_test', 'x_train', 'y_test', 'y_train']
-        )
-
         for count in self.feature_counts:
             subset = self.feature_subset[count]
             pca = skdecomp.PCA()
@@ -545,10 +556,12 @@ class Statistics:
             ddf_var_pct = variance.var_pct.diff().diff()
             cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
 
+            # TODO replace namedtuple with class attributes
             self.pca[n_components] = PCA(
-                cut_off, subset.feature_names, fit, pca, n_components,
-                subset.data, var_pct, var_pct_cum, variance,
-                x_test_pca, x_train_pca, subset.y_test, subset.y_train)
+                cut_off, subset.feature_names, fit, pca,
+                subset.players, n_components, subset.data, var_pct,
+                var_pct_cum, variance, x_test_pca, x_train_pca, subset.y_test,
+                subset.y_train)
 
         logger.debug('PCA Complete')
 
