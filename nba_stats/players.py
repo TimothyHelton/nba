@@ -351,7 +351,6 @@ class Statistics:
         classify_report = (skmetric
                            .classification_report(data.y_test, predict))
         features = len(data.feature_names) - 1
-        # TODO replace namedtuple with class attributes
         self.classify[features] = Classify(
             classify_report, confusion, classify, score_test, score_train)
 
@@ -398,6 +397,34 @@ class Statistics:
             optimal_features.append([model, features])
         self.optimal_model = pd.DataFrame(optimal_features,
                                           columns=['model', 'features'])
+
+    def evaluate_all_players(self, feature_qty=47, model='LR'):
+        """
+        Evaluate data against the model created with given number of features.
+
+        ..note:: The **feature_qty** must be a number from the attribute \
+            **feature_counts**.
+
+        :param int feature_qty: number of features to include in model
+        :param str model: classification model
+        """
+        data = self.pca[feature_qty]
+        x_test = (skpre.StandardScaler()
+                  .fit_transform(data.subset.drop('response', axis=1)))
+        y_test = data.subset.response
+
+        all_players = PCA(data.cut_off, data.feature_names, data.fit,
+                          data.model, data.n_components, data.players,
+                          data.subset, data.var_pct, data.var_pct_cum,
+                          data.variance, x_test, data.x_train, y_test,
+                          data.y_train)
+        self.classify_players(all_players, model='LR')
+
+        print(f'\n\nAll Players Dataset: {feature_qty} Features')
+        print(f'Mean Score: {self.classify[feature_qty].score_test:.3f}')
+        print(self.classify[feature_qty].classify_report)
+        print('Confusion Matrix')
+        print(self.classify[feature_qty].confusion)
 
     def evaluation_plot(self, save=False):
         """
@@ -529,7 +556,6 @@ class Statistics:
             x_train_kpca = kpca.fit_transform(subset.x_train)
             x_test_kpca = kpca.transform(subset.x_test)
 
-            # TODO replace namedtuple with class attributes
             self.kernel_pca[count] = KPCA(
                 subset.feature_names, fit, kpca, n_components, subset.players,
                 subset.data, x_test_kpca, x_train_kpca, subset.y_test,
@@ -556,7 +582,6 @@ class Statistics:
             ddf_var_pct = variance.var_pct.diff().diff()
             cut_off = ddf_var_pct[ddf_var_pct < 0].index.tolist()[0]
 
-            # TODO replace namedtuple with class attributes
             self.pca[n_components] = PCA(
                 cut_off, subset.feature_names, fit, pca,
                 subset.players, n_components, subset.data, var_pct,
