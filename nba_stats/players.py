@@ -90,8 +90,8 @@ def confusion_plot(matrix, save=False):
 
 
 Classify = namedtuple(
-    'Classify', ['classify_report', 'confusion', 'model',
-                 'score_test', 'score_train']
+    'Classify', ['classify_report', 'confusion', 'feature_names', 'model',
+                 'players', 'predict', 'score_test', 'score_train', 'subset']
 )
 
 Subset = namedtuple(
@@ -352,7 +352,8 @@ class Statistics:
                            .classification_report(data.y_test, predict))
         features = len(data.feature_names) - 1
         self.classify[features] = Classify(
-            classify_report, confusion, classify, score_test, score_train)
+            classify_report, confusion, data.feature_names, classify,
+            data.players, predict, score_test, score_train, data.subset)
 
     def evaluate_classification(self):
         """
@@ -418,7 +419,7 @@ class Statistics:
                           data.subset, data.var_pct, data.var_pct_cum,
                           data.variance, x_test, data.x_train, y_test,
                           data.y_train)
-        self.classify_players(all_players, model='LR')
+        self.classify_players(all_players, model=model)
 
         print(f'\n\nAll Players Dataset: {feature_qty} Features')
         print(f'Mean Score: {self.classify[feature_qty].score_test:.3f}')
@@ -584,7 +585,7 @@ class Statistics:
 
             self.pca[n_components] = PCA(
                 cut_off, subset.feature_names, fit, pca,
-                subset.players, n_components, subset.data, var_pct,
+                n_components, subset.players, subset.data, var_pct,
                 var_pct_cum, variance, x_test_pca, x_train_pca, subset.y_test,
                 subset.y_train)
 
@@ -1019,8 +1020,9 @@ class Statistics:
         # Hall of Fame
         filter_players = self.fame.query('category == "Player"').name
 
-        self.players_fame = self.players[(self.players.player
-                                          .isin(filter_players))]
+        self.players_fame = (self.players[(self.players.player
+                                           .isin(filter_players))]
+                             .drop_duplicates())
 
         stats_mask = self.stats.player.isin(filter_players)
         self.stats_fame = self.stats[stats_mask]
