@@ -150,6 +150,8 @@ class Statistics:
     - **google_key**: *str* Google API Key
     - **hof_birth_locations**: *DataFrame* male Hall of Fame birth locations, \
         latitude and longitude
+    - **interest**: *Series* NBA players predicted to be inducted into the \
+        Hall of Fame
     - **kernel_pca**: *dict* kernel principal component analysis
         - keys: *int* number of features
         - values: *tuple* (train_score, test_score)
@@ -208,6 +210,7 @@ class Statistics:
             self.google_key = None
 
         self.hof_birth_locations = None
+        self.interest = None
         self.kernel_pca = {}
         self.optimal_model = None
         self.pca = {}
@@ -421,11 +424,50 @@ class Statistics:
                           data.y_train)
         self.classify_players(all_players, model=model)
 
-        print(f'\n\nAll Players Dataset: {feature_qty} Features')
+        summary = self.classify[feature_qty].players.to_frame()
+        summary['fame_seasons'] = self.classify[feature_qty].predict
+
+        hof_predict = (summary.query('fame_seasons == 1')
+                       .groupby('player').sum())
+
+        results = (pd.merge(self.players_fame, hof_predict.reset_index(),
+                            how='left', on='player')
+                   .set_index('player')
+                   .fame_seasons
+                   .sort_index())
+        hof_true = results.count()
+        hof_true_pct = hof_true / hof_predict.size
+
+        investigate = hof_predict[~(hof_predict.index
+                                    .isin(self.players_fame.player))]
+        mask = investigate.quantile(0.98).fame_seasons
+        self.interest = (investigate.query(f'fame_seasons > {mask}')
+                         .sort_values(by='fame_seasons', ascending=False))
+
+        reg_predict = (summary.query('fame_seasons == 0')
+                       .groupby('player').sum())
+
+        results = (pd.merge(self.players_fame, reg_predict.reset_index(),
+                            how='left', on='player')
+                   .set_index('player')
+                   .fame_seasons
+                   .sort_index())
+        reg_true = reg_predict.size - results.count()
+        reg_true_pct = reg_true / reg_predict.size
+
+        print(f'\n\nAll Players Individual Seasons: {feature_qty} Features')
         print(f'Mean Score: {self.classify[feature_qty].score_test:.3f}')
         print(self.classify[feature_qty].classify_report)
         print('Confusion Matrix')
         print(self.classify[feature_qty].confusion)
+
+        print(f'\n\nAll Players Categorize: {feature_qty} Features')
+        print(f'Hall of Fame Accuracy: {hof_true_pct:0.3f}')
+        print(f'Regular Players: {reg_true_pct:0.3f}')
+
+        print(f'\n\nPlayers Predicted to be in the Hall of Fame: '
+              f'{feature_qty} Features')
+        print(self.interest)
 
     def evaluation_plot(self, save=False):
         """
