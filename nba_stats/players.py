@@ -823,7 +823,7 @@ class Statistics:
         for side in ('top', 'right', 'bottom', 'left'):
             ax0.spines[side].set_visible(False)
 
-        super_title = plt.suptitle('Hall of Fame Players',
+        super_title = plt.suptitle('Hall of Fame Inductees',
                                    fontsize=size['super_title'],
                                    x=0.05, y=1.09)
 
