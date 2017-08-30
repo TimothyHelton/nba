@@ -267,7 +267,7 @@ class Statistics:
             'field_goal_attempts': np.int,                  # FGA
             'field_goal_pct': np.float,                     # FG%
             '3_pointers': np.float,                         # 3P
-            '3_painters_attempts': np.float,                # 3PA
+            '3_pointers_attempts': np.float,                # 3PA
             '3_pointers_pct': np.float,                     # 3P%
             '2_pointers': np.int,                           # 2P
             '2_pointers_attempts': np.int,                  # 2PA
@@ -1238,7 +1238,8 @@ class Statistics:
 
         plt.tight_layout()
         super_title = plt.suptitle('Principal Components Analysis Training '
-                                   f'Model: {pca.n_components:3.0f} Features',
+                                   f'Model: {pca.n_components - 1:3.0f} '
+                                   f'Features',
                                    fontsize=size['super_title'],
                                    x=0.41, y=1.05)
 
