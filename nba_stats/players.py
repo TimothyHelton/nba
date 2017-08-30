@@ -1238,8 +1238,7 @@ class Statistics:
 
         plt.tight_layout()
         super_title = plt.suptitle('Principal Components Analysis Training '
-                                   f'Model: {pca.n_components - 1:3.0f} '
-                                   f'Features',
+                                   f'Model: {pca.n_components:3.0f} Features',
                                    fontsize=size['super_title'],
                                    x=0.41, y=1.05)
 
