@@ -130,9 +130,13 @@ class Statistics:
         - fields:
             - classify_report
             - confusion
+            - feature_names
             - model
+            - players
+            - predict
             - score_test
             - score_train
+            - subset
     - **evaluate**: *dict* model test and train scores
     - **fame**: *Series* players in the Hall of Fame
     - **features**: *DataFrame* model features
@@ -143,6 +147,7 @@ class Statistics:
         - fields:
             - data
             - feature_names
+            - players
             - x_test
             - x_train
             - y_test
@@ -159,8 +164,22 @@ class Statistics:
         on test score
     - **pca**: *dict* principal component analysis
         - keys: *int* number of features
-        - values: *tuple* (features, fit, transform, n_components, var_pct, \
-            var_pct_cum, variance, cut_off, subset)
+        - values: *namedtuple*
+            -fields:
+                - cut_off
+                - feature_names
+                - fit
+                - model
+                - n_components
+                - players
+                - subset
+                - var_pct
+                - var_pct_cum
+                - variance
+                - x_test
+                - x_train
+                - y_test
+                - y_train
     - **players**: *DataFrame* player dataset
     - **players_fame**: *DataFrame* player dataset filtered to only include \
         Hall of Fame members
@@ -170,6 +189,15 @@ class Statistics:
     - **stats_fame**: *DataFrame* stats dataset filtered to only include \
         Hall of Fame members
     - **stats_types**: *dict* data types for season statistics dataset
+    - **training_size**: *int* number of training records to be included for \
+        both the Hall of Fame players and the regular players (total training \
+        set will be DOUBLE the training_size)
+    - **x_test**: *ndarray* features test set
+    - **x_train**: *ndarray* features training set
+    - **y_test**: *Series* response test set
+    - **y_train**: *Series* response training set
+    - **young_talent**: *Series* young players identified with potential to \
+        be Hall of Famers
     """
     def __init__(self):
         self.classify = {}
@@ -293,6 +321,7 @@ class Statistics:
         self.x_train = None
         self.y_test = None
         self.y_train = None
+        self.young_talent = None
 
         self.load_data()
         self.get_feature_subsets()
@@ -440,9 +469,13 @@ class Statistics:
 
         investigate = hof_predict[~(hof_predict.index
                                     .isin(self.players_fame.player))]
-        mask = investigate.quantile(0.98).fame_seasons
-        self.interest = (investigate.query(f'fame_seasons > {mask}')
+        self.interest = (investigate
                          .sort_values(by='fame_seasons', ascending=False))
+
+        seasons = self.stats.groupby('player').player.count()
+        young_players = seasons.loc[seasons < 3]
+        self.young_talent = (self.interest[self.interest.isin(young_players)]
+                             .dropna())
 
         reg_predict = (summary.query('fame_seasons == 0')
                        .groupby('player').sum())
@@ -467,7 +500,11 @@ class Statistics:
 
         print(f'\n\nPlayers Predicted to be in the Hall of Fame: '
               f'{feature_qty} Features')
-        print(self.interest)
+        print(self.interest.head(20))
+
+        print(f'\n\nYoung Players showing promising starts: '
+              f'{feature_qty} Features')
+        print(self.young_talent)
 
     def evaluation_plot(self, save=False):
         """
